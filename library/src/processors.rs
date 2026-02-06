@@ -1,9 +1,11 @@
-use std::{cell::RefCell, collections::HashMap, sync::{Mutex, MutexGuard, OnceLock}};
-
+use std::{collections::HashMap, sync::MutexGuard};
 use num_traits::{Float, PrimInt};
 use rand::Rng;
 
-use crate::{connectors::{Input, Output}, memory::{DataTrait, Memory, MemoryTrait}, parameter::{Parameter, ParameterType, ParameterValueType}, states::State};
+use crate::connectors::{Input, Output};
+use crate::memory::{DataHeader, DataTrait, Memory, MemoryTrait};
+use crate::parameter::{Parameter, ParameterType, ParameterValueType};
+use crate::states::State;
 #[derive(PartialEq, Clone)]
 pub enum StreamType {
     NONE,
@@ -13,7 +15,6 @@ pub enum StreamType {
 }
 
 pub struct StreamBlock {
-    name: String,
     id: usize,
     memory: Memory,
     initialized: bool,
@@ -23,10 +24,9 @@ pub struct StreamBlock {
 
 impl StreamBlock
 {
-    pub fn new(name: String) -> Self {
+    pub fn new() -> Self {
         let id = rand::rng().random::<u64>() as usize;
         Self {
-            name,
             id,
             inputs: HashMap::new(),
             outputs: HashMap::new(),
@@ -39,19 +39,16 @@ impl StreamBlock
     }
     pub fn add_input<T: 'static>(&mut self, name: String) 
     where Input<T> : MemoryTrait{
-        let name = format!("{}_{}", self.name,name);
         self.inputs.insert(name.clone(), Box::new(Input::<T>::new(name)));
     }
     pub fn add_output<T: 'static + Clone>(&mut self, name: String) 
     where Output<T> : MemoryTrait {
-        let name = format!("{}_{}", self.name,name);
         self.outputs.insert(name.clone(), Box::new(Output::<T>::new(name)));
     }
     pub fn add_parameter<T: 'static>(&mut self, kind: ParameterValueType, name: String, parameter: ParameterType) 
     where   T: 'static + Clone + Sync + Send + Float + PrimInt + Default,
             Result<Parameter<T>, ()>: DataTrait 
     {
-        let name = format!("{}_{}", self.name,name);
         match kind {
             ParameterValueType::INTEGER => {
                 let _ = self.memory.insert(
@@ -78,7 +75,6 @@ impl StreamBlock
     where T: 'static + Clone + Sync + Send + Default,
     Result<State<T>, ()>: DataTrait 
     {
-        let name = format!("{}_{}", self.name,name);
         let _ = self.memory.insert(
             name.clone(), 
             Box::new(
@@ -152,7 +148,7 @@ impl StreamBlock
 pub trait ProcessorTrait :Send + Sync{
     fn as_any(&self) -> &dyn std::any::Any;
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-    fn name(&self) -> &String;
+    fn name(&self) -> &DataHeader;
     fn proc_name(&self) -> &String;
     fn header(&self) -> &ProcessorHeader;
     fn lock() -> Result<MutexGuard<'static, Self>, ()> where Self: Sized;
@@ -167,43 +163,10 @@ pub trait ProcessorTrait :Send + Sync{
     }
 }
 pub struct ProcessorHeader {
-    pub name: String,
+    pub proc_name: String,
     pub version: String,
     pub author: String,
     pub description: String,
     pub license: String,
     pub repository: String,
 }
-
-pub struct ProcessorTable {
-    blocks: HashMap<String, RefCell<Box<dyn ProcessorTrait>>>,
-}
-
-impl ProcessorTable {
-    fn new() -> Self {
-        Self {
-            blocks: HashMap::new(),
-        }
-    }
-    pub fn lock() -> Result<MutexGuard<'static, Self>, ()> {
-        PROCESSOR_TABLE.get_or_init(|| {
-            Mutex::new(ProcessorTable::new())
-        }).lock().map_err(|_| ())
-    }
-    pub fn get_processor(&self, name: String) -> Option<&RefCell<Box<dyn ProcessorTrait>>> {
-        self.blocks.get(&name)
-    }
-    pub fn get_processor_mut(&mut self, name: String) -> Option<&mut RefCell<Box<dyn ProcessorTrait>>> {
-        self.blocks.get_mut(&name)
-    }
-    pub fn insert_processor(&mut self, processor: Box<dyn ProcessorTrait>) -> Result<(), ()> {
-        let name = processor.name().clone();
-        if self.blocks.contains_key(&name) {
-            return Err(())
-        }
-        self.blocks.insert(name, RefCell::new(processor));
-        Ok(())
-    }
-}
-
-pub static PROCESSOR_TABLE: OnceLock<Mutex<ProcessorTable>> = OnceLock::new();

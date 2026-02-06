@@ -4,16 +4,12 @@ use crate::processors::{ProcessorTrait, StreamBlock, StreamType};
 
 pub struct Connection {
     from: String,
-    output_name: String,
     to: String,
-    input_name: String,
 }
 
 impl Connection {
     pub fn from(&self) -> &String { &self.from }
-    pub fn output(&self) -> &String { &self.output_name }
     pub fn to(&self) -> &String { &self.to }
-    pub fn input(&self) -> &String { &self.input_name }
 }
 
 pub struct Chain {
@@ -41,21 +37,25 @@ impl Chain {
             }
             self.input_present = true;
         }
-        
         self.blocks.insert(block.name().clone(), RefCell::new(block));
         Ok(())
     }
-    pub fn connect<T: 'static + Clone>(&mut self, output_block_id: String, output_name: String, input_block_id: String, input_name: String) -> Result<(), ()> {
+    pub fn connect<T: 'static + Clone>(&mut self, output_name: String, input_name: String) -> Result<(), ()> {
         let mut from_lock: RefMut<'_, Box<dyn ProcessorTrait>>;
         let mut to_lock: RefMut<'_, Box<dyn ProcessorTrait>>;
         let mut from_block: Option<&mut StreamBlock> = None;
         let mut to_block: Option<&mut StreamBlock> = None;
+        let output_split: Vec<&str> = output_name.split(".").collect();
+        let input_split: Vec<&str> = input_name.split(".").collect();
+        if output_split.len() != 2 || input_split.len() != 2 {
+            return Err(());
+        }
         for process in self.blocks.values_mut() {
             let proc = process.borrow_mut();
-            if proc.name() == &output_block_id {
+            if proc.name() == &output_split.get(0).unwrap().to_string() {
                 from_lock = proc;
                 from_block = Some(from_lock.get_stream_block_mut());
-            } else if proc.name() == &input_block_id {
+            } else if proc.name() == &input_split.get(0).unwrap().to_string() {
                 to_lock = proc;
                 to_block = Some(to_lock.get_stream_block_mut());
             }
@@ -64,12 +64,14 @@ impl Chain {
             }
         }
         if let (Some(from_block), Some(to_block)) = (from_block, to_block) {
-            from_block.connect::<T>(&output_name, &input_name, to_block)?;
+            from_block.connect::<T>(
+                &output_split.get(1).unwrap().to_string(),
+                &input_split.get(1).unwrap().to_string(),
+                to_block)?;
+
             self.connections.push(Connection {
-                from: output_block_id,
-                output_name,
-                to: input_block_id,
-                input_name,
+                from: output_name,
+                to: input_name,
             });
             Ok(())
         } else {
@@ -128,45 +130,61 @@ impl OperativeMode {
             connections: Vec::new(),
         }
     }
-    pub fn add_chain(&mut self, id: String, chain: Chain) -> Result<(), ()> {
-        if self.chains.contains_key(&id) {
+    pub fn add_chain(&mut self, name: String, chain: Chain) -> Result<(), ()> {
+        if self.chains.contains_key(&name) {
             return Err(())
         }
-        let name  = format!("{}.{}", self.name, id);
         self.chains.insert(name, chain);
         Ok(())
     }
-    pub fn connect<T: 'static + Clone>(&mut self, output_block_id: String, output_name: String, input_block_id: String, input_name: String) -> Result<(), ()> {
+    pub fn connect<T: 'static + Clone>(&mut self, output_name: String, input_name: String) -> Result<(),()>{
         let mut from_block: Option<&mut StreamBlock> = None;
         let mut to_block: Option<&mut StreamBlock> = None;
         let mut from_binding;
         let mut to_binding;
-        for chain in self.chains.values_mut() {
-            if chain.get_blocks(output_block_id.clone()).is_some() {
-                from_binding = chain.get_blocks_mut(output_block_id.clone()).ok_or(())?.borrow_mut();
-                from_block = Some(from_binding.get_stream_block_mut());
-            } else {
-                if chain.get_blocks(input_block_id.clone()).is_some() {
-                    to_binding = chain.get_blocks_mut(input_block_id.clone()).ok_or(())?.borrow_mut();
+        let output_split: Vec<&str> = output_name.split(".").collect();
+        let input_split: Vec<&str> = input_name.split(".").collect();
+        if output_split.len() != 3 || input_split.len() != 3 {
+            return Err(());
+        }
+        let output_chain = output_split.get(0).unwrap().to_string();
+        let input_chain = input_split.get(0).unwrap().to_string();
+        let output_name = format!("{}.{}", output_split.get(1).unwrap(), output_split.get(2).unwrap());
+        let input_name = format!("{}.{}", input_split.get(1).unwrap(), input_split.get(2).unwrap());
+        if output_chain.eq(&input_chain) {
+            let chain = self.chains.get_mut(&output_chain).ok_or(())?;
+            return chain.connect::<T>(output_name.clone(), input_name.clone())
+        } else {
+            let output_block = output_split.get(1).unwrap().to_string();
+            let input_block = input_split.get(1).unwrap().to_string();    
+            for chain in self.chains.values_mut() {
+                if chain.name == output_chain.clone() {
+                    from_binding = chain.get_blocks_mut(output_block.clone()).ok_or(())?.borrow_mut();
+                    from_block = Some(from_binding.get_stream_block_mut());
+                } else if chain.name == input_chain {
+                    to_binding = chain.get_blocks_mut(input_block.clone()).ok_or(())?.borrow_mut();
                     to_block = Some(to_binding.get_stream_block_mut());
                 }
+
+                if from_block.is_some() && to_block.is_some() {
+                    break;
+                }
             }
-            if from_block.is_some() && to_block.is_some() {
-                break
+            if let (Some(from_block), Some(to_block)) = (from_block, to_block) {
+                from_block.connect::<T>(
+                    &output_split.get(2).unwrap().to_string(), 
+                    &input_split.get(2).unwrap().to_string(), 
+                    to_block)?;
+                self.connections.push(Connection {
+                    from: output_name.clone(),
+                    to: input_name.clone(),
+                });
+                Ok(())
+            } else {
+                Err(())
             }
         }
-        if let (Some(from_block), Some(to_block)) = (from_block, to_block) {
-            from_block.connect::<T>(&output_name, &input_name, to_block)?;
-            self.connections.push(Connection {
-                from: output_block_id.clone(),
-                output_name,
-                to: input_block_id.clone(),
-                input_name,
-            });
-            Ok(())
-        } else {
-            Err(())
-        }
+
     }
     pub fn initialize(&mut self) -> Result<(), ()> {
         for chain in self.chains.values_mut() {
