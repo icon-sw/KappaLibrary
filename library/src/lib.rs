@@ -1,5 +1,5 @@
 pub mod memory;
-pub mod connectors;
+pub mod connections;
 pub mod parameter;
 pub mod states;
 pub mod processors;

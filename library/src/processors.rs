@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::MutexGuard};
 use num_traits::{Float, PrimInt};
 use rand::Rng;
 
-use crate::connectors::{Input, Output};
+use crate::connections::{Input, Output};
 use crate::memory::{DataHeader, DataTrait, Memory, MemoryTrait};
 use crate::parameter::{Parameter, ParameterType, ParameterValueType};
 use crate::states::State;

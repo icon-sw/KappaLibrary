@@ -1,7 +1,7 @@
-use std::{cell::{RefCell, RefMut}, collections::{HashMap, VecDeque}};
+use std::{cell::{RefCell, RefMut}, collections::HashMap};
 
-use crate::processors::{ProcessorTrait, StreamBlock, StreamType};
-
+use crate::{connections::ConnectionGraph, processors::{ProcessorTrait, StreamBlock, StreamType}};
+#[derive(Clone)]
 pub struct Connection {
     from: String,
     to: String,
@@ -15,9 +15,9 @@ impl Connection {
 pub struct Chain {
     pub name: String,
     blocks: HashMap<String, RefCell<Box<dyn ProcessorTrait>>>,
-    connections: Vec<Connection>,
+    connections: ConnectionGraph,
     input_present: bool,
-    is_initialized: bool,
+    initialized: bool,
 }
 
 impl Chain {
@@ -25,9 +25,9 @@ impl Chain {
         Self {
             name,
             blocks: HashMap::new(),
-            connections: Vec::new(),
+            connections: ConnectionGraph::new(),
             input_present: false,
-            is_initialized: false,
+            initialized: false,
         }
     }
     pub fn add_block(&mut self, block: Box<dyn ProcessorTrait>) -> Result<(), ()> {
@@ -69,10 +69,10 @@ impl Chain {
                 &input_split.get(1).unwrap().to_string(),
                 to_block)?;
 
-            self.connections.push(Connection {
-                from: output_name,
-                to: input_name,
-            });
+            self.connections.add_connection(
+                output_split.get(0).unwrap().to_string(),
+                input_split.get(0).unwrap().to_string(),
+            );
             Ok(())
         } else {
             Err(())
@@ -84,12 +84,14 @@ impl Chain {
     pub fn get_blocks_mut(&mut self, id: String) -> Option<&mut RefCell<Box<dyn ProcessorTrait>>> {
         self.blocks.get_mut(&id)
     }
+
     pub fn initialize(&mut self) -> Result<(), ()> {
-        if !self.is_initialized {
-            // TODO: Sort of blocks
-            self.is_initialized = true;
+        if !self.initialized {
+            self.connections.check()?;
+            self.initialized = true;
         }
-        for block in self.blocks.values_mut() {
+        for block_name in self.connections.get_nodes().rev() {
+            let block = self.blocks.get_mut(block_name).ok_or(())?;
             if block.borrow_mut().initialize().is_err() {
                 return Err(())
             }
@@ -97,6 +99,9 @@ impl Chain {
         Ok(())
     }
     pub fn process(&mut self) -> Result<(), ()> {
+        if !self.initialized {
+            return Err(());
+        }
         for block in self.blocks.values_mut() {
             if block.borrow_mut().process().is_err() {
                 return Err(())
@@ -118,7 +123,7 @@ pub struct OperativeMode {
     pub name: String,
     pub id: usize,
     chains: HashMap<String, Chain>,
-    connections: Vec<Connection>,
+    connections: ConnectionGraph,
 }
 
 impl OperativeMode {
@@ -127,7 +132,7 @@ impl OperativeMode {
             name,
             id,
             chains: HashMap::new(),
-            connections: Vec::new(),
+            connections: ConnectionGraph::new(),
         }
     }
     pub fn add_chain(&mut self, name: String, chain: Chain) -> Result<(), ()> {
@@ -175,10 +180,9 @@ impl OperativeMode {
                     &output_split.get(2).unwrap().to_string(), 
                     &input_split.get(2).unwrap().to_string(), 
                     to_block)?;
-                self.connections.push(Connection {
-                    from: output_name.clone(),
-                    to: input_name.clone(),
-                });
+                self.connections.add_connection(
+                    output_split.get(1).unwrap().to_string(),
+                    input_split.get(1).unwrap().to_string());
                 Ok(())
             } else {
                 Err(())
