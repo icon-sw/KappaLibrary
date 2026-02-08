@@ -116,7 +116,7 @@ impl<T: 'static + Clone + PartialOrd + Send + Sync> Parameter<T> {
     }
 }
 
-impl<T: 'static> MemoryTrait for Parameter<T> {
+impl<T: 'static + Send + Sync> MemoryTrait for Parameter<T> {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

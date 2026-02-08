@@ -39,7 +39,7 @@ impl<T: 'static + Clone + Sync + Send + Default> State<T> {
     }
 }
 
-impl<T: 'static> MemoryTrait for State<T> {
+impl<T: 'static + Send + Sync> MemoryTrait for State<T> {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

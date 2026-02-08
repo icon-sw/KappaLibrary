@@ -2,7 +2,7 @@ use std::{any::Any, collections::HashMap};
 
 pub type DataHeader = String;
 
-pub trait MemoryTrait {
+pub trait MemoryTrait : Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
@@ -66,6 +66,7 @@ impl Memory {
         true
     }
 }
+
 
 #[cfg(test)]
 mod tests {

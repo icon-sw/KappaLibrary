@@ -1,16 +1,16 @@
-use std::{collections::{VecDeque, vec_deque::Iter}, sync::mpsc::{Receiver, SyncSender}};
-use crate::memory::{MemoryTrait, DataHeader};
+use std::{collections::{VecDeque, vec_deque::Iter}, sync::{Arc, Mutex, mpsc::{Receiver, SyncSender}}};
+use crate::memory::DataHeader;
 
 pub struct Input<T> {
     pub name: DataHeader,
-    receiver: Receiver<T>,
+    receiver: Arc<Mutex<Receiver<T>>>,
     sender: SyncSender<T>,
 }
 
 impl<T> Input<T> {
     pub fn new(name: DataHeader) -> Self {
         let (sender, receiver) = std::sync::mpsc::sync_channel(0);
-        Self { name, receiver, sender }
+        Self { name, receiver: Arc::new(Mutex::new(receiver)), sender }
     }
     pub fn get_header(&self) -> &DataHeader {
         &self.name
@@ -19,16 +19,7 @@ impl<T> Input<T> {
         self.sender.clone()
     }
     pub fn receive(&self) -> Result<T, ()> {
-        self.receiver.recv().map_err(|_| ())
-    }
-}
-
-impl MemoryTrait for Input<u8> {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+        self.receiver.lock().map_err(|_| ())?.recv().map_err(|_| ())
     }
 }
 
