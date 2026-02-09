@@ -4,6 +4,7 @@ use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard, OnceLock}, thread
 use crate::{connections::{Input, Output}, memory::{DataHeader, MemoryTrait}, modes::OperativeMode, processors::{ProcessorHeader, ProcessorTrait, StreamBlock}};
 
 pub type Callback = fn (&mut dyn ProcessorTrait) -> Result<(), ()>;
+pub type StreamProcessorHandle = Arc<Mutex<Option<JoinHandle<Result<(),()>>>>>;
 type StreamTable = Mutex<Vec<Arc<Mutex<StreamController>>>>;
 static STREAM_TABLE: OnceLock<StreamTable> = OnceLock::new();
 static STREAM_ID_COUNTER: OnceLock<Mutex<isize>> = OnceLock::new();
@@ -26,6 +27,7 @@ pub struct StreamController {
     processors: HashMap<String, Box<dyn ProcessorTrait>>,
     commands_callback: HashMap<String, Callback>,
     state: Arc<Mutex<StreamState>>,
+    stream_handle: StreamProcessorHandle,
 }
 
 impl MemoryTrait for Input<String> {
@@ -83,7 +85,17 @@ impl ProcessorTrait for StreamController {
         Err(())
     }
     fn finalize(&mut self) -> Result<(), ()> {
-        *self.state.lock().map_err(|_| ())? = StreamState::Waiting;
+        let handle = self.stream_handle().lock().map_err(|_|())?.take();
+        self.set_stream_handle(Arc::new(Mutex::new(None)));
+        if let Some(handle) = handle {
+            match handle.join() {
+                Ok(result) => {
+
+                    return result;
+                }
+                Err(_) => return Err(())
+            }
+        }
         Ok(())
     }
 }
@@ -112,6 +124,7 @@ impl StreamController {
             state: Arc::new(Mutex::new(StreamState::Uninitialized)),
             processors: HashMap::new(),
             commands_callback: HashMap::new(),
+            stream_handle: Arc::new(Mutex::new(None)),
         };
         self_instance.stream_block.add_input::<String>("command".to_string())?;
         self_instance.stream_block.add_output::<Result<(), ()>>("response".to_string())?;
@@ -140,7 +153,7 @@ impl StreamController {
         })?;
         self.stream_block.add_command("run".to_string(), |proc| {
             let stream_controller = proc.as_any_mut().downcast_mut::<Self>().ok_or(())?;
-            Self::run(*stream_controller)
+            Self::run(stream_controller.stream_id)
         })?;
         self.stream_block.add_command("stand-by".to_string(), |proc| {
             let stream_controller = proc.as_any_mut().downcast_mut::<Self>().ok_or(())?;
@@ -148,8 +161,15 @@ impl StreamController {
         })?;
         Ok(())
     }
-    pub fn run(mut stream: Arc<Mutex<Self>>) -> Result<(), ()> {
-        let a: JoinHandle<Result<(), ()>> = std::thread::spawn(move || {
+    pub fn stream_handle(&self) -> StreamProcessorHandle {
+        self.stream_handle.clone()
+    }
+    pub fn set_stream_handle(&mut self, handle: StreamProcessorHandle) {
+        self.stream_handle = handle;
+    }
+    pub fn run(stream_id: isize) -> Result<(), ()> {
+        let stream = Self::get_stream(stream_id)?;
+        let handle: JoinHandle<Result<(), ()>> = std::thread::spawn(move || {
             let mut stream = stream.lock().map_err(|_| ())?;
             {
                 let mut state = stream.state.lock().map_err(|_| ())?;
@@ -160,7 +180,8 @@ impl StreamController {
             }
             loop {
                 if let Err(_) = stream.process() {
-                    stream.finalize()?;
+                    let mut state = stream.state.lock().map_err(|_| ())?;
+                    *state = StreamState::Waiting;
                     return Err(());
                 }
                 let state = stream.state.lock().map_err(|_| ())?;
@@ -170,6 +191,8 @@ impl StreamController {
             }
             Ok(())
         });
+        let stream = Self::get_stream(stream_id)?;
+        stream.lock().map_err(|_|())?.set_stream_handle(Arc::new(Mutex::new(Some(handle))));
         Ok(())
     }
     pub fn add_mode(&mut self, id: usize, mode: OperativeMode) -> Result<(), ()> {
