@@ -182,19 +182,28 @@ impl StreamBlock
     }
 }
 
-pub trait ProcessorTrait: Send + Sync {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamState {
+    Uninitialized,
+    Initialized,
+    Running,
+    Waiting,
+}
+pub trait ProcessorBlockTrait: Send + Sync {
     fn as_any(&self) -> &dyn std::any::Any;
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
     fn name(&self) -> &DataHeader;
     fn proc_name(&self) -> &String;
     fn header(&self) -> &ProcessorHeader;
     fn lock() -> Result<MutexGuard<'static, Self>, ()> where Self: Sized;
+    fn get_proc_state(&self) -> Result<StreamState, ()>;
+    fn get_stream_block(&self) -> &StreamBlock;
+    fn get_stream_block_mut(&mut self) -> &mut StreamBlock;
+}
+pub trait ProcessorTrait: ProcessorBlockTrait + Send + Sync {
     fn initialize(&mut self ) -> Result<(), ()>;
     fn process(&mut self) -> Result<(), ()>;
     fn finalize(&mut self) -> Result<(), ()>;
-    fn get_proc_state(&self) -> Result<(), ()>;
-    fn get_stream_block(&self) -> &StreamBlock;
-    fn get_stream_block_mut(&mut self) -> &mut StreamBlock;
     fn get_processor_type(&self) -> StreamType {
         self.get_stream_block().get_processor_type()
     }

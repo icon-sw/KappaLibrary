@@ -1,21 +1,15 @@
 use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard, OnceLock}, thread::JoinHandle}; 
 
 
-use crate::{connections::{Input, Output}, memory::{DataHeader, MemoryTrait}, modes::OperativeMode, processors::{ProcessorHeader, ProcessorTrait, StreamBlock}};
-
+use crate::{connections::{Input, Output}, memory::{DataHeader, MemoryTrait}, modes::OperativeMode, processors::{ProcessorHeader, ProcessorTrait, ProcessorBlockTrait, StreamBlock, StreamState}};
+use processor_macro::ProcessorMacro;
 pub type Callback = fn (&mut dyn ProcessorTrait) -> Result<(), ()>;
 pub type StreamProcessorHandle = Arc<Mutex<Option<JoinHandle<Result<(),()>>>>>;
 type StreamTable = Mutex<Vec<Arc<Mutex<StreamController>>>>;
 static STREAM_TABLE: OnceLock<StreamTable> = OnceLock::new();
 static STREAM_ID_COUNTER: OnceLock<Mutex<isize>> = OnceLock::new();
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StreamState {
-    Uninitialized,
-    Initialized,
-    Running,
-    Waiting,
-}
+#[derive(ProcessorMacro)]
 pub struct StreamController {
     pub name: String,
     pub header: ProcessorHeader,
@@ -214,21 +208,6 @@ impl StreamController {
 }
 
 impl ProcessorTrait for StreamController {
-    fn as_any(&self) -> &dyn std::any::Any {self}
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {self}
-    fn name(&self) -> &DataHeader { &self.name}
-    fn proc_name(&self) -> &String { &self.header().proc_name }
-    fn header(&self) -> &ProcessorHeader { &self.header }
-    fn lock() -> Result<MutexGuard<'static, Self>, ()> where Self: Sized {Err(())}
-    fn get_proc_state(&self) -> Result<(), ()> {
-        Ok(())
-    }
-    fn get_stream_block(&self) -> &StreamBlock {
-        &self.stream_block
-    }
-    fn get_stream_block_mut(&mut self) -> &mut StreamBlock {
-        &mut self.stream_block
-    }
     fn initialize(&mut self) -> Result<(), ()> {
         let mut state = self.state.lock().map_err(|_| ())?;
         if self.stream_id == -1 {
