@@ -1,0 +1,3 @@
+1 - OperativeMode::add_proc(&mut self, chain: isize, Box<dyn<ProcessorTrait>>)
+2 - Chain::add_proc(&mut self, Box<dyn<ProcessorTrait>>
+3 - modes.rs:156: remove scoped thread
