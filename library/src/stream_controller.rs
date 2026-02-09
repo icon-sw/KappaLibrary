@@ -1,12 +1,20 @@
-use std::{collections::HashMap, sync::{Mutex, MutexGuard, OnceLock}}; 
+use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard, OnceLock}, thread::JoinHandle}; 
+
 
 use crate::{connections::{Input, Output}, memory::{DataHeader, MemoryTrait}, modes::OperativeMode, processors::{ProcessorHeader, ProcessorTrait, StreamBlock}};
 
-pub type Callback = fn (&mut StreamBlock) -> Result<(), ()>;
-
-static STREAM_TABLE: OnceLock<Mutex<Vec<StreamController>>> = OnceLock::new();
+pub type Callback = fn (&mut dyn ProcessorTrait) -> Result<(), ()>;
+type StreamTable = Mutex<Vec<Arc<Mutex<StreamController>>>>;
+static STREAM_TABLE: OnceLock<StreamTable> = OnceLock::new();
 static STREAM_ID_COUNTER: OnceLock<Mutex<isize>> = OnceLock::new();
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamState {
+    Uninitialized,
+    Initialized,
+    Running,
+    Waiting,
+}
 pub struct StreamController {
     pub name: String,
     pub header: ProcessorHeader,
@@ -17,6 +25,7 @@ pub struct StreamController {
     command_map: HashMap<String, String>,
     processors: HashMap<String, Box<dyn ProcessorTrait>>,
     commands_callback: HashMap<String, Callback>,
+    state: Arc<Mutex<StreamState>>,
 }
 
 impl MemoryTrait for Input<String> {
@@ -53,31 +62,38 @@ impl ProcessorTrait for StreamController {
         &mut self.stream_block
     }
     fn initialize(&mut self) -> Result<(), ()> {
-        self.stream_block.add_input::<String>("command".to_string())?;
-        self.stream_block.add_output::<Result<(), ()>>("response".to_string())?;
+        let mut state = self.state.lock().map_err(|_| ())?;
+        if self.stream_id == -1 {
+            return Err(());
+        }
+        if *state == StreamState::Running {
+            return Err(());
+        }
+        *state = StreamState::Initialized;
         Ok(())
     }
     fn process(&mut self) -> Result<(), ()> {
-        let mut return_value: Result<(), ()> = Err(());
         if self.stream_block.get_input::<String>(&"command".to_string())?.receive().is_ok() {
             let command = self.stream_block.get_input::<String>(&"command".to_string())?.receive()?;
             self.execute_command(command)?;
             if self.stream_block.get_output::<Result<(),()>>(&"response".to_string())?.send(Ok(())).is_ok() {
-                return_value = Ok(());
+                return Ok(());
             }
         }
-        return_value
+        Err(())
     }
     fn finalize(&mut self) -> Result<(), ()> {
-         Ok(())
+        *self.state.lock().map_err(|_| ())? = StreamState::Waiting;
+        Ok(())
     }
 }
 impl StreamController {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, ()> {
         let mode = OperativeMode::new("default".to_string(), 0);
         let mut modes = HashMap::new();
         modes.insert(0, mode);
-        Self {
+        
+        let mut self_instance = Self {
             name: "StreamController".to_string(),
             stream_id: -1 as isize,
             header: ProcessorHeader {
@@ -93,26 +109,68 @@ impl StreamController {
             modes,
             current_mode_id: 0,
             command_map: HashMap::new(),
+            state: Arc::new(Mutex::new(StreamState::Uninitialized)),
             processors: HashMap::new(),
             commands_callback: HashMap::new(),
-        }
+        };
+        self_instance.stream_block.add_input::<String>("command".to_string())?;
+        self_instance.stream_block.add_output::<Result<(), ()>>("response".to_string())?;
+        
+        Ok(self_instance)
     }
     pub fn register_stream(mut stream: Self) -> Result<(), ()> {
         let mut stream_table = STREAM_TABLE.get_or_init(|| Mutex::new(Vec::new())).lock().map_err(|_| ())?;
         let mut stream_id_counter = STREAM_ID_COUNTER.get_or_init(|| Mutex::new(0)).lock().map_err(|_| ())?;
         *stream_id_counter += 1;
         stream.stream_id = *stream_id_counter;
-        stream_table.push(stream);
+        stream.stream_block.set_stream_id(*stream_id_counter);
+        stream.add_commands()?;
+        stream_table.push(Arc::new(Mutex::new(stream)));
         Ok(())
     }
-    pub fn run(&mut self) -> Result<(), ()> {
-        if self.stream_id == -1 {
-            return Err(());
-        }
-        self.initialize()?;
-        self.process()?;
-        self.finalize()?;
-         Ok(())
+    pub fn get_stream(id: isize) -> Result<Arc<Mutex<Self>>, ()> {
+        let stream_table = STREAM_TABLE.get_or_init(|| Mutex::new(Vec::new())).lock().map_err(|_| ())?;
+        let stream_lock = stream_table.get((id - 1) as usize).ok_or(())?;
+        Ok(Arc::clone(stream_lock))
+    }
+    pub fn add_commands(&mut self) -> Result<(), ()> {
+        self.stream_block.add_command("init".to_string(), |proc| {
+            let stream_controller = proc.as_any_mut().downcast_mut::<Self>().ok_or(())?;
+            stream_controller.initialize()
+        })?;
+        self.stream_block.add_command("run".to_string(), |proc| {
+            let stream_controller = proc.as_any_mut().downcast_mut::<Self>().ok_or(())?;
+            Self::run(*stream_controller)
+        })?;
+        self.stream_block.add_command("stand-by".to_string(), |proc| {
+            let stream_controller = proc.as_any_mut().downcast_mut::<Self>().ok_or(())?;
+            stream_controller.finalize()
+        })?;
+        Ok(())
+    }
+    pub fn run(mut stream: Arc<Mutex<Self>>) -> Result<(), ()> {
+        let a: JoinHandle<Result<(), ()>> = std::thread::spawn(move || {
+            let mut stream = stream.lock().map_err(|_| ())?;
+            {
+                let mut state = stream.state.lock().map_err(|_| ())?;
+                if *state == StreamState::Uninitialized {
+                    return Err(());
+                }
+                *state = StreamState::Running;
+            }
+            loop {
+                if let Err(_) = stream.process() {
+                    stream.finalize()?;
+                    return Err(());
+                }
+                let state = stream.state.lock().map_err(|_| ())?;
+                if *state == StreamState::Waiting {
+                    break;
+                }
+            }
+            Ok(())
+        });
+        Ok(())
     }
     pub fn add_mode(&mut self, id: usize, mode: OperativeMode) -> Result<(), ()> {
         if self.modes.contains_key(&id) {
@@ -141,7 +199,8 @@ impl StreamController {
         }
         let mut stream_table = STREAM_TABLE.get_or_init(|| Mutex::new(Vec::new())).lock().map_err(|_| ())?;
         let stream_lock = stream_table.get_mut(id as usize).ok_or(())?;
-        let stream = stream_lock.as_any_mut().downcast_mut::<Self>().ok_or(())?;
+        let mut binding = stream_lock.lock().map_err(|_| ())?;
+        let stream = binding.as_any_mut().downcast_mut::<Self>().ok_or(())?;
         if stream.command_map.contains_key(&command) {
             return Err(())
         }
@@ -156,6 +215,6 @@ impl StreamController {
         let block_name = self.command_map.get(&command).ok_or(())?;
         let block = self.processors.get_mut(block_name).ok_or(())?;
         let callback = self.commands_callback.get(&command).ok_or(())?;
-        (callback)(block.as_mut().get_stream_block_mut())
+        (callback)(block.as_mut())
     }
 }

@@ -189,7 +189,7 @@ pub trait ProcessorTrait: Send + Sync {
     fn proc_name(&self) -> &String;
     fn header(&self) -> &ProcessorHeader;
     fn lock() -> Result<MutexGuard<'static, Self>, ()> where Self: Sized;
-    fn initialize(&mut self) -> Result<(), ()>;
+    fn initialize(&mut self ) -> Result<(), ()>;
     fn process(&mut self) -> Result<(), ()>;
     fn finalize(&mut self) -> Result<(), ()>;
     fn get_proc_state(&self) -> Result<(), ()>;
@@ -199,6 +199,7 @@ pub trait ProcessorTrait: Send + Sync {
         self.get_stream_block().get_processor_type()
     }
 }
+#[derive(Clone)]
 pub struct ProcessorHeader {
     pub proc_name: String,
     pub description: String,
