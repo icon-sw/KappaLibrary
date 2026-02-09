@@ -1,4 +1,4 @@
 [workspace]
 resolver = "3"
-members = ["library",
+members = ["library", "macro/memory_macro",
     "macro/processor_macro"]

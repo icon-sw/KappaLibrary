@@ -1,15 +1,17 @@
 use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard, OnceLock}, thread::JoinHandle}; 
 
+use processor_macro::K2ProcessorBlock;
+use memory_macro::K2Memory;
 
-use crate::{connections::{Input, Output}, memory::{DataHeader, MemoryTrait}, modes::OperativeMode, processors::{ProcessorHeader, ProcessorTrait, ProcessorBlockTrait, StreamBlock, StreamState}};
-use processor_macro::ProcessorMacro;
+use crate::{memory::{DataHeader, MemoryTrait}, modes::OperativeMode, processors::{ProcessorHeader, ProcessorTrait, ProcessorBlockTrait, StreamBlock, StreamState}};
+
 pub type Callback = fn (&mut dyn ProcessorTrait) -> Result<(), ()>;
 pub type StreamProcessorHandle = Arc<Mutex<Option<JoinHandle<Result<(),()>>>>>;
 type StreamTable = Mutex<Vec<Arc<Mutex<StreamController>>>>;
 static STREAM_TABLE: OnceLock<StreamTable> = OnceLock::new();
 static STREAM_ID_COUNTER: OnceLock<Mutex<isize>> = OnceLock::new();
 
-#[derive(ProcessorMacro)]
+#[derive(K2Memory, K2ProcessorBlock)]
 pub struct StreamController {
     pub name: String,
     pub header: ProcessorHeader,
@@ -22,23 +24,6 @@ pub struct StreamController {
     commands_callback: HashMap<String, Callback>,
     state: Arc<Mutex<StreamState>>,
     stream_handle: StreamProcessorHandle,
-}
-
-impl MemoryTrait for Input<String> {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-impl MemoryTrait for Output<Result<(), ()>> {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
 }
 
 impl StreamController {
@@ -137,7 +122,7 @@ impl StreamController {
         stream.lock().map_err(|_|())?.set_stream_handle(Arc::new(Mutex::new(Some(handle))));
         Ok(())
     }
-    pub fn connect<T: 'static + Clone> (&mut self, from: String, to: String) -> Result<(), ()> {
+    pub fn connect<T: 'static + Send + Sync + Clone> (&mut self, from: String, to: String) -> Result<(), ()> {
         let mut from_block = None;
         let mut to_block = None;
         let from_split: Vec<&str> = from.split(".").collect();

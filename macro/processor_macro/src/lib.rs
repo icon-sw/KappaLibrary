@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
-#[proc_macro_derive(ProcessorMacro)]
+#[proc_macro_derive(K2ProcessorBlock)]
 pub fn processor_macro_derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
     let name = &ast.ident;
@@ -10,8 +10,6 @@ pub fn processor_macro_derive(input: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let expanded = quote! {
         impl #impl_generics ProcessorBlockTrait for #name #ty_generics #where_clause {
-            fn as_any(&self) -> &dyn std::any::Any {self}
-            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {self}
             fn name(&self) -> &DataHeader { &self.name}
             fn proc_name(&self) -> &String { &self.header().proc_name }
             fn header(&self) -> &ProcessorHeader { &self.header }

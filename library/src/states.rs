@@ -1,7 +1,9 @@
+use memory_macro::K2Memory;
+
 use crate::memory::{DataHeader, DataTrait, MemoryTrait};
 
-#[derive(Clone)]
-pub struct State<T> {
+#[derive(Clone, K2Memory)]
+pub struct State<T: 'static + Sync + Send> {
     pub name: DataHeader,
     value: T,
     init: T,
@@ -39,14 +41,6 @@ impl<T: 'static + Clone + Sync + Send + Default> State<T> {
     }
 }
 
-impl<T: 'static + Send + Sync> MemoryTrait for State<T> {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
 impl<T: 'static + Clone+ Send + Sync> DataTrait for State<T> {
     fn clone_box(self) -> Box<dyn DataTrait> {
         Box::new(self.clone())

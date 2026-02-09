@@ -1,3 +1,4 @@
+use memory_macro::K2Memory;
 use num_traits::{Float, PrimInt};
 
 use crate::memory::{DataHeader, DataTrait, MemoryTrait};
@@ -17,8 +18,8 @@ pub enum ParameterValueType {
     INTEGER,
     FLOAT,
 }
-#[derive(Clone)]
-pub struct Parameter<T> {
+#[derive(Clone, K2Memory)]
+pub struct Parameter<T: 'static + Send + Sync> {
     pub name: DataHeader,
     value: T,
     default: T,
@@ -116,14 +117,6 @@ impl<T: 'static + Clone + PartialOrd + Send + Sync> Parameter<T> {
     }
 }
 
-impl<T: 'static + Send + Sync> MemoryTrait for Parameter<T> {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
 impl<T: 'static + Clone+ Send + Sync> DataTrait for Parameter<T> {
     fn clone_box(self) -> Box<dyn DataTrait> {
         Box::new(self.clone())

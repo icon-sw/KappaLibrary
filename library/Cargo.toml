@@ -7,3 +7,4 @@ edition = "2024"
 num-traits = "0.2.19"
 rand = "0.9.2"
 processor_macro = { path = "../macro/processor_macro"}
+memory_macro = { path = "../macro/memory_macro"}

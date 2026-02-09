@@ -1,13 +1,16 @@
 use std::{collections::{VecDeque, vec_deque::Iter}, sync::{Arc, Mutex, mpsc::{Receiver, SyncSender}}};
-use crate::memory::DataHeader;
+use memory_macro::K2Memory;
 
-pub struct Input<T> {
+use crate::memory::{DataHeader, MemoryTrait};
+
+#[derive(K2Memory)]
+pub struct Input<T: 'static + Send + Sync> {
     pub name: DataHeader,
     receiver: Arc<Mutex<Receiver<T>>>,
     sender: SyncSender<T>,
 }
 
-impl<T> Input<T> {
+impl<T: 'static + Send + Sync> Input<T> {
     pub fn new(name: DataHeader) -> Self {
         let (sender, receiver) = std::sync::mpsc::sync_channel(0);
         Self { name, receiver: Arc::new(Mutex::new(receiver)), sender }
@@ -22,13 +25,13 @@ impl<T> Input<T> {
         self.receiver.lock().map_err(|_| ())?.recv().map_err(|_| ())
     }
 }
-
-pub struct Output<T> {
+#[derive(K2Memory)]
+pub struct Output<T: 'static + Send + Sync> {
     pub name: DataHeader,
     sender: Vec<SyncSender<T>>,
 }
 
-impl<T: Clone> Output<T> {
+impl<T: 'static + Send + Sync + Clone> Output<T> {
     pub fn new(name: DataHeader) -> Self {
         Self { name, sender: Vec::new() }
     }

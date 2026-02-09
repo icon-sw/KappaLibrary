@@ -55,7 +55,8 @@ impl StreamBlock
         self.task_id.push(task_id);
     }
     pub fn add_input<T: 'static>(&mut self, name: String) -> Result<(), ()>
-    where Input<T> : MemoryTrait{
+    where Input<T> : MemoryTrait,
+          T: 'static + Send + Sync {
         if !self.inputs.contains_key(&name) {
             self.inputs.insert(name.clone(), Box::new(Input::<T>::new(name)));
             Ok(())
@@ -64,7 +65,8 @@ impl StreamBlock
         }
     }
     pub fn add_output<T: 'static + Clone>(&mut self, name: String) -> Result<(), ()>
-    where Output<T> : MemoryTrait {
+    where Output<T> : MemoryTrait,
+          T: 'static + Send + Sync + Clone {
         if !self.outputs.contains_key(&name) {
             self.outputs.insert(name.clone(), Box::new(Output::<T>::new(name)));
             Ok(())
@@ -134,16 +136,16 @@ impl StreamBlock
         self.initialized = true;
         Ok(())
     }
-    pub fn get_parameter<T: 'static>(&self, name: &String) -> Result<&Parameter<T>, ()> {
+    pub fn get_parameter<T: 'static + Send + Sync>(&self, name: &String) -> Result<&Parameter<T>, ()> {
         self.memory.get(name).ok_or(())?.as_any().downcast_ref::<Parameter<T>>().ok_or(())
     }
-    pub fn get_state<T: 'static>(&self, name: &String) -> Result<&State<T>, ()> {
+    pub fn get_state<T: 'static + Send + Sync>(&self, name: &String) -> Result<&State<T>, ()> {
         self.memory.get(name).ok_or(())?.as_any().downcast_ref::<State<T>>().ok_or(())
     }
-    pub fn get_input<T: 'static>(&self, name: &String) -> Result<&Input<T>, ()> {
+    pub fn get_input<T: 'static + Send + Sync>(&self, name: &String) -> Result<&Input<T>, ()> {
         self.inputs.get(name).ok_or(())?.as_any().downcast_ref::<Input<T>>().ok_or(())
     }
-    pub fn get_output<T: 'static + Clone>(&self, name: &String) -> Result<&Output<T>, ()> {
+    pub fn get_output<T: 'static + Send + Sync + Clone>(&self, name: &String) -> Result<&Output<T>, ()> {
         self.outputs.get(name).ok_or(())?.as_any().downcast_ref::<Output<T>>().ok_or(())
     }
     pub fn set_param<T: 'static>(&mut self, name: &String, value: T) -> Result<(), ()> 
@@ -156,7 +158,7 @@ impl StreamBlock
         let state = self.memory.get_mut(name).ok_or(())?.as_any_mut().downcast_mut::<State<T>>().ok_or(())?;
         state.set(value)
     }
-    pub fn connect<T: 'static + Clone>(&mut self, output_name: &String, input_name: &String, other_block: &StreamBlock) -> Result<(), ()> {
+    pub fn connect<T: 'static + Send + Sync + Clone>(&mut self, output_name: &String, input_name: &String, other_block: &StreamBlock) -> Result<(), ()> {
         let output = self.outputs.get_mut(output_name).ok_or(())?;
         let output = output.as_any_mut().downcast_mut::<Output<T>>().ok_or(())?;
         let input = other_block.inputs.get(input_name).ok_or(())?;
@@ -164,11 +166,11 @@ impl StreamBlock
         output.connect(input.get_sender());
         Ok(())
     }
-    pub fn receive_input<T: 'static>(&self, name: &String) -> Result<T, ()> {
+    pub fn receive_input<T: 'static + Send + Sync>(&self, name: &String) -> Result<T, ()> {
         let input = self.inputs.get(name).ok_or(())?.as_any().downcast_ref::<Input<T>>().ok_or(())?;
         input.receive()
     }
-    pub fn send_output<T: 'static + Clone>(&self, name: &String, data: T) -> Result<(), ()> {
+    pub fn send_output<T: 'static + Send + Sync + Clone>(&self, name: &String, data: T) -> Result<(), ()> {
         let output = self.outputs.get(name).ok_or(())?.as_any().downcast_ref::<Output<T>>().ok_or(())?;
         output.send(data)
     }
@@ -189,9 +191,7 @@ pub enum StreamState {
     Running,
     Waiting,
 }
-pub trait ProcessorBlockTrait: Send + Sync {
-    fn as_any(&self) -> &dyn std::any::Any;
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+pub trait ProcessorBlockTrait: MemoryTrait + Send + Sync {
     fn name(&self) -> &DataHeader;
     fn proc_name(&self) -> &String;
     fn header(&self) -> &ProcessorHeader;
