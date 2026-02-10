@@ -1,0 +1,7 @@
+[package]
+name = "k2lang"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+k2_stream = { path = "../K2Stream"}

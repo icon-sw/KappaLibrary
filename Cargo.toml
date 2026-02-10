@@ -1,4 +1,4 @@
 [workspace]
 resolver = "3"
-members = ["library", "macro/memory_macro",
+members = ["K2Lang","K2Stream", "macro/memory_macro",
     "macro/processor_macro"]
