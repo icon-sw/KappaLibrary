@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::{Mutex, OnceLock}};
+use std::{collections::HashMap, sync::{Arc, Mutex, OnceLock}, thread::JoinHandle};
 
 use crate::{connections::ConnectionGraph, processors::{ProcessorTrait, StreamType}};
 
@@ -23,6 +23,7 @@ pub struct Chain {
     connections: ConnectionGraph,
     input_present: bool,
     initialized: bool,
+    running: Arc<Mutex<bool>>,
 }
 
 impl Chain {
@@ -38,6 +39,7 @@ impl Chain {
             initialized: false,
             stream_id: -1 as isize,
             task_id: task_id,
+            running: Arc::new(Mutex::new(false)),
         }
     }
     pub fn get_stream_id(&self) -> isize {
@@ -88,14 +90,19 @@ impl Chain {
         if !self.initialized {
             return Err(());
         }
-        for block in self.blocks.values_mut() {
-            if block.process().is_err() {
-                return Err(())
+        *self.running.lock().unwrap() = true;
+        while *self.running.lock().unwrap() {
+            for block in self.blocks.values_mut() {
+                if block.process().is_err() {
+                    *self.running.lock().unwrap() = false;
+                    return Err(())
+                }
             }
-        }
+        }   
         Ok(())
     }
     pub fn finalize(&mut self) -> Result<(), ()> {
+        *self.running.lock().unwrap() = false;
         for block in self.blocks.values_mut() {
             if block.finalize().is_err() {
                 return Err(())
@@ -109,7 +116,8 @@ pub struct OperativeMode {
     pub name: String,
     pub id: usize,
     stream_id: isize,
-    chains: HashMap<String, Chain>,
+    chains: HashMap<String, Arc<Mutex<Chain>>>,
+    chain_results: HashMap<String, JoinHandle<Result<(), ()>>>,
 }
 
 impl OperativeMode {
@@ -118,6 +126,7 @@ impl OperativeMode {
             name,
             id,
             chains: HashMap::new(),
+            chain_results: HashMap::new(),
             stream_id: -1,
         }
     }
@@ -132,7 +141,7 @@ impl OperativeMode {
             return Err(())
         }
         chain.set_stream_id(self.stream_id);
-        self.chains.insert(name, chain);
+        self.chains.insert(name, Arc::new(Mutex::new(chain)));
         Ok(())
     }
     
@@ -141,6 +150,7 @@ impl OperativeMode {
             return Err(())
         }
         for chain in self.chains.values_mut() {
+            let mut chain = chain.lock().map_err(|_| ())?;
             if chain.initialize().is_err() {
                 return Err(())
             }
@@ -153,18 +163,31 @@ impl OperativeMode {
         }
         for chain in self.chains.values_mut() {
             // Todo: Gestione dei task
-            std::thread::scope( |s | {
-                s.spawn(|| chain.process());
-            } );
+            let chain_clone = chain.clone();
+            let handle: JoinHandle<Result<(), ()>> = std::thread::spawn( move || {
+                let mut chain = chain_clone.lock().map_err(|_| ())?;
+                chain.process() 
+            });
+            let chain = chain.lock().map_err(|_| ())?;
+            self.chain_results.insert(chain.name.clone(), handle);
         }
         Ok(())
     }
     pub fn finalize(&mut self) -> Result<(), ()> {
-        for chain in self.chains.values_mut() {
+        let mut result = Ok(());
+        for (chain_name, chain) in self.chains.iter() {
+            let mut chain = chain.lock().map_err(|_| ())?;
             if chain.finalize().is_err() {
-                return Err(())
+                result = Err(())
+            }
+            if let Some(handle) = self.chain_results.remove(chain_name) {
+                if handle.join().map_err(|_| ())?.is_err() {
+                    result = Err(())
+                }
+            } else {
+                result = Err(())
             }
         }
-        Ok(())
+        result
     }
 }

@@ -106,10 +106,10 @@ impl StreamController {
                 *state = StreamState::Running;
             }
             loop {
-                if let Err(_) = stream.process() {
+                if let Err(e) = stream.process() {
                     let mut state = stream.state.lock().map_err(|_| ())?;
                     *state = StreamState::Waiting;
-                    return Err(());
+                    return Err(e);
                 }
                 let state = stream.state.lock().map_err(|_| ())?;
                 if *state == StreamState::Waiting {
