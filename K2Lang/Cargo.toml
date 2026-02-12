@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 k2_stream = { path = "../K2Stream"}
+processor_macro = { path = "../macro/processor_macro"}
+memory_macro = { path = "../macro/memory_macro"}
