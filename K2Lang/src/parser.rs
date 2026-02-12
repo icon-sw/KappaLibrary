@@ -7,7 +7,8 @@ use k2_stream::{memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTr
 static COMMANDS: [&str; 9] = ["new", "add", "delete", "set", "connect", "disconnect", "init", "run", "stop"];
 static OBJECTS: [&str; 10] = ["input", "output", "parameter", "state", "processor", "stream", "chain", "mode", "command", "code"];
 
-pub type ParserCallback = fn (&mut dyn ProcessorTrait, &Vec<String>) -> bool;
+type ParserReturn = Result<bool, String>;
+type ParserCallback = fn(&mut Parser, &Vec<String>) -> ParserReturn;
 
 pub struct ParseObject {
     pub name: String,
@@ -29,7 +30,6 @@ pub struct Parser {
 
 impl Parser {
     pub fn new() -> Result<Self, ()> {
-        let mut callbacks_cmd: HashMap<String, ParserCallback> = HashMap::new();
         let mut self_instance = Self {
             name: "Parser".to_string(),
             header: ProcessorHeader {
@@ -44,10 +44,11 @@ impl Parser {
             stream_block: StreamBlock::new(),
             state: Arc::new(Mutex::new(StreamState::Initialized)),
             objects: HashMap::new(),
-            callbacks_cmd: callbacks_cmd,
+            callbacks_cmd: HashMap::new(),
         };
+        self_instance.callbacks_cmd.insert("new".to_string(), Parser::parse_new);
         self_instance.stream_block.add_input::<String>("command".to_string())?;
-        self_instance.stream_block.add_output::<Result<bool, ()>>("response".to_string())?;
+        self_instance.stream_block.add_output::<ParserReturn>("response".to_string())?;
         Ok(self_instance)
     }
     pub fn split_commands(&self, command: &String) -> Vec<Vec<String>> {
@@ -60,17 +61,16 @@ impl Parser {
         commands.into_iter().map(|cmd| cmd.split_whitespace().map(|s| s.to_string()).collect()).collect()
         //
     }
-    pub fn parse_new(&mut self, command: &Vec<String>) -> bool {
+    pub fn parse_new(&mut self, command: &Vec<String>) -> ParserReturn {
         if command.len() < 3 {
-            return false;
+            return Err("Invalid command length".to_string());
         }
         let object_type = &command[1];
         let object_name = &command[2];
         if !OBJECTS.contains(&object_type.as_str()) {
-            return false;
-
+            return Err("Invalid object type".to_string());
         }
-        true
+        Ok(true)
     }
     pub fn parse_add(command: &Vec<String>) -> bool {
         // parse the add command and execute the corresponding action
@@ -104,7 +104,7 @@ impl Parser {
         // parse the stop command and execute the corresponding action
         true
     }
-    pub fn parse_command(&mut self, command: &String) -> Result<bool, ()> {
+    pub fn parse_command(&mut self, command: &String) -> ParserReturn {
         let tokenized_commands = self.split_commands(&command);
         let mut response = Ok(true);
         for cmd in tokenized_commands {
@@ -112,7 +112,9 @@ impl Parser {
                 continue;
             }
             if let Some(callback) = self.callbacks_cmd.get(&cmd[0]) {
-                if !(callback)(self, &cmd) {
+                if callback(self, &cmd)? {
+                    response = Ok(true);
+                } else {
                     response = Ok(false);
                     break;
                 }
@@ -132,15 +134,15 @@ impl ProcessorTrait for Parser {
         Ok(())
     }
     fn process(&mut self) -> Result<(), ()> {
-        let command_input = self.stream_block.get_input::<String>(&"command".to_string())?;
-        let response_output = self.stream_block.get_output::<Result<bool, ()>>(&"response".to_string())?;
         *self.state.lock().map_err(|_| ())? = StreamState::Running;
         loop {
+            let command_input = self.stream_block.get_input::<String>(&"command".to_string())?;
             let command_str = command_input.receive()?;
             if *self.state.lock().map_err(|_| ())? == StreamState::Waiting {
                 break;
             }
             let response = self.parse_command(&command_str);
+            let response_output = self.stream_block.get_output::<ParserReturn>(&"response".to_string())?;
             response_output.send(response)?;
         }
         Ok(())
