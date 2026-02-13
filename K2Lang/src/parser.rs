@@ -3,26 +3,10 @@ use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard}};
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
 use k2_stream::{memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorTrait, StreamBlock, StreamState}};
-use crate::coder::ProcessorCoderParts;
+use crate::{K2Object, K2ReturnStruct, coder::ProcessorCoderParts};
 
-#[derive(Clone)]
-pub struct ParseObject {
-    pub name: String,
-    pub object_type: String,
-    pub parent: Vec<String>,
-    pub children: Vec<String>,
-    pub properties: HashMap<String, String>,
-}
 
-#[derive(Clone)]
-pub struct ParserReturnStruct {
-    pub success: bool,
-    pub command: String,
-    pub message: String,
-    pub data: Option<Vec<ParseObject>>,
-}
-
-type ParserReturn = Result<ParserReturnStruct, String>;
+type ParserReturn = Result<K2ReturnStruct, String>;
 type ParserCallback = fn(&mut Parser, &Vec<String>) -> ParserReturn;
 
 #[derive(K2Memory, K2ProcessorBlock)]
@@ -32,7 +16,7 @@ pub struct Parser {
     pub header: ProcessorHeader,
     stream_block: StreamBlock,
     state: Arc<Mutex<StreamState>>,
-    objects: HashMap<String, ParseObject>,
+    objects: HashMap<String, K2Object>,
     callbacks_cmd: HashMap<String, ParserCallback>,
 }
 
@@ -64,7 +48,7 @@ impl Parser {
             callbacks_cmd,
         };
         self_instance.stream_block.add_input::<String>("command".to_string())?;
-        self_instance.stream_block.add_output::<ParserReturn>("response".to_string())?;
+        self_instance.stream_block.add_output::<K2ReturnStruct>("response".to_string())?;
         Ok(self_instance)
     }
     pub fn split_commands(&self, command: &String) -> Vec<Vec<String>> {
@@ -89,7 +73,7 @@ impl Parser {
         if !object_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
             return Err("Invalid object name".to_string());
         }
-        let mut processing_object = ParseObject {
+        let mut processing_object = K2Object {
             name: object_name.to_string(),
             object_type: object_type.to_string(),
             parent: Vec::new(),
@@ -122,7 +106,7 @@ impl Parser {
                 if data_type.is_empty() {
                     return Err("Data type cannot be empty".to_string());
                 }
-                processing_object.properties.insert("data_type".to_string(), data_type.to_string());
+                processing_object.properties.insert("type".to_string(), data_type.to_string());
             },
             "parameter" | "state" => {
                 let split_name: Vec<String> = object_name.split(".").map(|s| s.to_string()).collect();
@@ -153,7 +137,7 @@ impl Parser {
                 if value.is_empty() {
                     return Err("Value cannot be empty".to_string());
                 }
-                processing_object.properties.insert("data_type".to_string(), data_type.to_string());
+                processing_object.properties.insert("type".to_string(), data_type.to_string());
                 processing_object.properties.insert("value".to_string(), value.to_string());
             }
             "code" => {
@@ -201,6 +185,9 @@ impl Parser {
                 processing_object.parent.push(split_name[0].to_string());
             }
             "library" | "application" => {
+                if command.len() < 3 {
+                    return Err("Invalid command length for library/application".to_string());
+                }
                 let split_name: Vec<String> = object_name.split(".").map(|s| s.to_string()).collect();
                 if split_name.len() != 1 {
                     return Err("Invalid object name format".to_string());
@@ -208,6 +195,7 @@ impl Parser {
                 if self.objects.get(&split_name[0]).is_some() {
                     return Err("Object with the same name already exists".to_string());
                 }
+                processing_object.properties.insert("path".to_string(), command[2].to_string());
             }
             "chain" | "mode" => {
                 let split_name: Vec<String> = object_name.split(".").map(|s| s.to_string()).collect();
@@ -255,7 +243,7 @@ impl Parser {
                 if processor_type.is_empty() {
                     return Err("Processor cannot be empty".to_string());
                 }
-                processing_object.properties.insert("processor".to_string(), processor_type.to_string());
+                processing_object.properties.insert("type".to_string(), processor_type.to_string());
                 processing_object.properties.insert("connection".to_string(), "0".to_string());
             }
             "command" => {
@@ -267,7 +255,7 @@ impl Parser {
         }
         self.objects.insert(object_name.to_string(), processing_object.clone());
         Ok(
-            ParserReturnStruct {
+            K2ReturnStruct {
                 success: true,
                 command: "".to_string(),
                 message: "Create".to_string(),
@@ -309,7 +297,7 @@ impl Parser {
         self.objects.insert(parent_name.to_string(), parent_object.clone());
         self.objects.insert(child_name.to_string(), child_object.clone());
         Ok(
-            ParserReturnStruct {
+            K2ReturnStruct {
                 success: true,
                 command: "".to_string(),
                 message: "Add".to_string(),
@@ -340,7 +328,7 @@ impl Parser {
         }
         self.objects.remove(object_name);
         Ok(
-            ParserReturnStruct {
+            K2ReturnStruct {
                 success: true,
                 command: "".to_string(),
                 message: "Delete".to_string(),
@@ -364,7 +352,7 @@ impl Parser {
         let object = self.objects.get_mut(object_name).unwrap();
         object.properties.insert(property_name.to_string(), property_value);
         Ok(
-            ParserReturnStruct {
+            K2ReturnStruct {
                 success: true,
                 command: "".to_string(),
                 message: "Set".to_string(),
@@ -399,7 +387,7 @@ impl Parser {
         source_parent_object.properties.insert(format!("connection_{}", connection_number), format!("{}-{}", source_name, target_name));
         source_parent_object.properties.insert("connection".to_string(), connection_number.to_string());
         Ok(
-            ParserReturnStruct {
+            K2ReturnStruct {
                 success: true,
                 command: "".to_string(),
                 message: "Connect".to_string(),
@@ -439,7 +427,7 @@ impl Parser {
                 source_parent_object.properties.insert("connection".to_string(), connection_number.to_string());
             }
             return Ok(
-                ParserReturnStruct {
+                K2ReturnStruct {
                     success: true,
                     command: "".to_string(),
                     message: "Disconnect".to_string(),
@@ -455,7 +443,7 @@ impl Parser {
         }
         let message = &command[1];
         Ok(
-            ParserReturnStruct {
+            K2ReturnStruct {
                 success: true,
                 command: "".to_string(),
                 message: message.to_string(),
@@ -464,14 +452,14 @@ impl Parser {
         )
         
     }
-    pub fn parse_command(&mut self, command: &String) -> ParserReturn {
+    pub fn parse_command(&mut self, command: &String) -> K2ReturnStruct {
         let tokenized_commands = self.split_commands(&command);
-        let mut response: ParserReturn = Ok(ParserReturnStruct {
+        let mut response = K2ReturnStruct {
             success: false,
             command: command.to_string(),
             message: "Unknown".to_string(),
             data: None,
-        });
+        };
         for cmd in tokenized_commands {
             if cmd.is_empty() {
                 continue;
@@ -481,25 +469,25 @@ impl Parser {
                 match result {
                     Ok(mut res) => {
                         res.command = command.to_string();
-                        response = Ok(res);
+                        response.command = res.command.clone();
                     }
                     Err(_) => {
-                        response = Ok(ParserReturnStruct {
+                        response = K2ReturnStruct {
                             success: false,
                             command: command.to_string(),
                             message: format!("Error"),
                             data: None,
-                        });
+                        };
                         break;
                     }
                 }
             } else {
-                response = Ok(ParserReturnStruct {
+                response = K2ReturnStruct {
                     success: false,
                     command: command.to_string(),
                     message: format!("Unknown"),
                     data: None,
-                });
+                };
                 break;
             }
         }
@@ -515,16 +503,11 @@ impl ProcessorTrait for Parser {
     }
     fn process(&mut self) -> Result<(), ()> {
         *self.state.lock().map_err(|_| ())? = StreamState::Running;
-        loop {
-            let command_input = self.stream_block.get_input::<String>(&"command".to_string())?;
-            let command_str = command_input.receive()?;
-            if *self.state.lock().map_err(|_| ())? == StreamState::Waiting {
-                break;
-            }
-            let response = self.parse_command(&command_str);
-            let response_output = self.stream_block.get_output::<ParserReturn>(&"response".to_string())?;
-            response_output.send(response)?;
-        }
+        let command_input = self.stream_block.get_input::<String>(&"command".to_string())?;
+        let command_str = command_input.receive()?;
+        let response = self.parse_command(&command_str);
+        let response_output = self.stream_block.get_output::<K2ReturnStruct>(&"response".to_string())?;
+        response_output.send(response)?;
         Ok(())
     }
     fn finalize(&mut self) -> Result<(), ()> {
