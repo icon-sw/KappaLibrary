@@ -2,6 +2,9 @@ use std::collections::HashMap;
 
 pub mod parser;
 pub mod coder;
+pub mod ast;
+
+pub type Token = Vec<String>;
 
 #[derive(Clone)]
 pub struct K2Object {
@@ -16,6 +19,7 @@ pub struct K2Object {
 pub struct K2ReturnStruct {
     pub success: bool,
     pub command: String,
+    pub tokens: Token,
     pub message: String,
     pub data: Option<Vec<K2Object>>,
 }
