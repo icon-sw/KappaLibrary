@@ -121,32 +121,6 @@ impl AstProcessor {
                 processing_object.properties.insert("type".to_string(), data_type.to_string());
                 processing_object.properties.insert("value".to_string(), value.to_string());
             }
-            "code" => {
-                let split_name: Vec<String> = object_name.split(".").map(|s| s.to_string()).collect();
-                if split_name.len() != 3 {
-                    return Err("Invalid object name format for parameter/state".to_string());
-                }
-                if k2_parse_struct.tokens.len() < 5 {
-                    return Err("Invalid k2_parse_struct.tokens length for code".to_string());
-                }
-                let parent_name = format!("{}.{}", split_name[0], split_name[1]);
-                match self.objects.get_mut(&parent_name) {
-                    Some(parent_object) => {
-                        if parent_object.object_type != "processor" {
-                            return Err("Parent object must be a processor".to_string());
-                        }
-                        parent_object.children.push(object_name.to_string());
-                    },
-                    None => {
-                        return Err("Parent object does not exist".to_string());
-                    }
-                }
-                processing_object.parent.push(parent_name);
-                ProcessorCoderParts::try_from(k2_parse_struct.tokens[3].to_string())
-                    .map_err(|_| format!("Invalid processor code part: {}", k2_parse_struct.tokens[3].to_string()))?;
-                processing_object.properties.insert("block".to_string(), k2_parse_struct.tokens[3].to_string());
-                processing_object.properties.insert("code".to_string(), k2_parse_struct.tokens[4].to_string());
-            }
             "processor" => {
                 let split_name: Vec<String> = object_name.split(".").map(|s| s.to_string()).collect();
                 if split_name.len() != 2 {
@@ -241,7 +215,7 @@ impl AstProcessor {
             command: k2_parse_struct.command.clone(),
             tokens: k2_parse_struct.tokens.clone(),
             message: "Parsed".to_string(),
-            data: None,
+            data: Some(vec![processing_object]),
         })
     }
     pub fn parse_add(&mut self, k2_parse_struct: &K2ReturnStruct) -> AstReturn {
@@ -320,19 +294,30 @@ impl AstProcessor {
         })
     }
     pub fn parse_set(&mut self, k2_parse_struct: &K2ReturnStruct) -> AstReturn {
-        if k2_parse_struct.tokens.len() < 3 {
+        if k2_parse_struct.tokens.len() < 4 {
             return Err("Invalid k2_parse_struct.tokens length".to_string());
         }
         let object_name = &k2_parse_struct.tokens[1];
         if self.objects.get(object_name).is_none() {
-            return Err("Object does not exist".to_string());
+            let split_name: Vec<String> = object_name.split(".").map(|s| s.to_string()).collect();
+            if split_name.len() == 3 {
+                let parent_name = format!("{}.{}", split_name[0], split_name[1]);
+                if let Some(parent_object) = self.objects.get(&parent_name) {
+                    if parent_object.object_type == "processor" {
+                        let code_part = &split_name[2];
+                        ProcessorCoderParts::try_from(code_part.clone()).map_err(|_| "Invalid code part".to_string())?;
+                    } else {
+                        return Err("Object does not exist".to_string());
+                    }
+                } else {
+                    return Err("Object does not exist".to_string());
+                }
+            } else {
+                return Err("Object does not exist".to_string());
+            }
         }
         let property_name = &k2_parse_struct.tokens[2];
-        let property_value = if k2_parse_struct.tokens.len() > 3 {
-            k2_parse_struct.tokens[3..].join(" ")
-        } else {
-            return Err("Property value is missing".to_string());
-        };
+        let property_value = k2_parse_struct.tokens[3..].join(" ");
         let object = self.objects.get_mut(object_name).unwrap();
         object.properties.insert(property_name.to_string(), property_value);
         Ok(
@@ -424,10 +409,17 @@ impl AstProcessor {
             return Err("Connection does not exist".to_string());
         }
     }
-    pub fn parse_exec(&mut self, k2_parse_struct: &K2ReturnStruct) -> AstReturn {
+    fn parse_exec(&mut self, k2_parse_struct: &K2ReturnStruct) -> AstReturn {
+        // parse the exec k2_parse_struct.tokens and execute the corresponding action
+         if k2_parse_struct.tokens.len() < 2 {
+            return Err("Invalid k2_parse_struct.tokens length".to_string());
+        }
+        Ok(k2_parse_struct.clone())
+    }
+    pub fn parse_command(&mut self, k2_parse_struct: &K2ReturnStruct) -> K2ReturnStruct {
         let mut response = k2_parse_struct.clone();
         if !k2_parse_struct.success {
-            return Ok(response);
+            return response;
         }
         if let Some(callback) = self.callbacks_cmd.get(k2_parse_struct.tokens[0].clone().as_str()) {
             let result = callback(self, &k2_parse_struct);
@@ -454,8 +446,7 @@ impl AstProcessor {
                 data: None,
             };
         }
-        Ok(response)
-        
+        response
     }
 }
 
@@ -472,7 +463,7 @@ impl ProcessorTrait for AstProcessor {
         let mut response = k2_parse_struct.clone();
         if k2_parse_struct.success {
             // Here you would implement the logic to parse the k2_parse_struct.tokens and return the appropriate response
-            response = self.parse_exec(&k2_parse_struct).map_err(|_|())?;
+            response = self.parse_command(&k2_parse_struct);
         }
         let response_output = self.stream_block.get_output::<K2ReturnStruct>(&"response".to_string())?;
         response_output.send(response)?;

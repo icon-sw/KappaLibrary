@@ -1,6 +1,7 @@
 1 - OperativeMode::add_proc(&mut self, chain: isize, Box<dyn<ProcessorTrait>>)
 2 - Chain::add_proc(&mut self, Box<dyn<ProcessorTrait>>
 4 - review State 
+5 - control on code in coder.rs
 
 Server:
 Parser: input<String> = "r#", outtput<String> -> 

@@ -98,15 +98,6 @@ impl Parser {
                     return Err("Value cannot be empty".to_string());
                 }
             }
-            "code" => {
-                let split_name: Vec<String> = object_name.split(".").map(|s| s.to_string()).collect();
-                if split_name.len() != 3 {
-                    return Err("Invalid object name format for parameter/state".to_string());
-                }
-                if command.len() < 5 {
-                    return Err("Invalid command length for code".to_string());
-                }
-            }
             "processor" => {
                 let split_name: Vec<String> = object_name.split(".").map(|s| s.to_string()).collect();
                 if split_name.len() != 2 {
@@ -166,6 +157,10 @@ impl Parser {
     pub fn parse_set(&mut self, command: &Vec<String>) -> ParserReturn {
         if command.len() < 4 {
             return Err("Invalid command length".to_string());
+        }
+        let split_name: Vec<String> = command[1].split(".").map(|s| s.to_string()).collect();
+        if split_name.len() != 3 {
+            return Err("Invalid object name format".to_string());
         }
         Ok(command.clone())
     }
