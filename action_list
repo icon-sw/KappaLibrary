@@ -4,8 +4,7 @@
 5 - control on code in coder.rs
 
 Server:
-Parser: input<String> = "r#", outtput<String> -> 
-    Coder: input<String> -> output<String>
+Parser -> Ast -> Coder -> Builder -> Executable
 
 
 

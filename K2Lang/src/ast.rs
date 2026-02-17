@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard}};
 
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
-use k2_stream::{memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorTrait, StreamBlock, StreamState}};
+use k2_stream::{memory::{DataHeader, MemoryTrait}, parameter, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorTrait, StreamBlock, StreamState}};
 use crate::{K2Object, K2ReturnStruct, coder::ProcessorCoderParts};
 
 type AstReturn = Result<K2ReturnStruct, String>;
@@ -120,6 +120,16 @@ impl AstProcessor {
                 }
                 processing_object.properties.insert("type".to_string(), data_type.to_string());
                 processing_object.properties.insert("value".to_string(), value.to_string());
+                if object_type == "parameter" {
+                    let mut parameter_kind = "dynamic".to_string();
+                    if k2_parse_struct.tokens.len() == 6 {
+                        parameter_kind = k2_parse_struct.tokens[5].to_string();
+                    }
+                    if parameter_kind != "static" && parameter_kind != "dynamic" {
+                        return Err("Parameter kind must be either static or dynamic".to_string());
+                    }
+                    processing_object.properties.insert("kind".to_string(), parameter_kind.to_string());
+                }
             }
             "processor" => {
                 let split_name: Vec<String> = object_name.split(".").map(|s| s.to_string()).collect();

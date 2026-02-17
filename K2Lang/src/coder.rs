@@ -2,9 +2,9 @@ use std::{collections::HashMap, fmt, sync::{Arc, Mutex, MutexGuard}};
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
 
-use k2_stream::{memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorTrait, StreamBlock, StreamState}};
+use k2_stream::{memory::{DataHeader, MemoryTrait}, parameter::{self, ParameterValueType}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorTrait, StreamBlock, StreamState}};
 
-use crate::K2ReturnStruct;
+use crate::{K2ReturnStruct, coder};
 
 type CoderReturn = Result<K2ReturnStruct, String>;
 type CoderCallback = fn(&mut Coder, &K2ReturnStruct) -> CoderReturn;
@@ -17,6 +17,7 @@ pub enum ProcessorCoderParts {
     EndStruct,
     HeadBuilder,
     UserDefinedBuilder,
+    MemberCreation,
     UserMemberCreation,
     UserDefinedImplStruct,
     InitBody,
@@ -35,11 +36,12 @@ impl TryFrom<u8> for ProcessorCoderParts {
             4 => Ok(ProcessorCoderParts::EndStruct),
             5 => Ok(ProcessorCoderParts::HeadBuilder),
             6 => Ok(ProcessorCoderParts::UserDefinedBuilder),
-            7 => Ok(ProcessorCoderParts::UserMemberCreation),
-            8 => Ok(ProcessorCoderParts::UserDefinedImplStruct),
-            9 => Ok(ProcessorCoderParts::InitBody),
-            10 => Ok(ProcessorCoderParts::ProcessBody),
-            11 => Ok(ProcessorCoderParts::FinalizeBody),
+            7 => Ok(ProcessorCoderParts::MemberCreation),
+            8 => Ok(ProcessorCoderParts::UserMemberCreation),
+            9 => Ok(ProcessorCoderParts::UserDefinedImplStruct),
+            10 => Ok(ProcessorCoderParts::InitBody),
+            11 => Ok(ProcessorCoderParts::ProcessBody),
+            12 => Ok(ProcessorCoderParts::FinalizeBody),
             _ => Err(()),
         }
     }
@@ -55,6 +57,7 @@ impl TryFrom<String> for ProcessorCoderParts {
             "end_struct" => Ok(ProcessorCoderParts::EndStruct),
             "processor_builder_header" => Ok(ProcessorCoderParts::HeadBuilder),
             "user_defined_builder" => Ok(ProcessorCoderParts::UserDefinedBuilder),
+            "member_creation" => Ok(ProcessorCoderParts::MemberCreation),
             "user_member_creation" => Ok(ProcessorCoderParts::UserMemberCreation),
             "user_defined_impl_struct" => Ok(ProcessorCoderParts::UserDefinedImplStruct),
             "init_body" => Ok(ProcessorCoderParts::InitBody),
@@ -74,6 +77,7 @@ impl fmt::Display for ProcessorCoderParts {
             ProcessorCoderParts::EndStruct => write!(f, "end_struct"),
             ProcessorCoderParts::HeadBuilder => write!(f, "processor_builder_header"),
             ProcessorCoderParts::UserDefinedBuilder => write!(f, "user_defined_builder"),
+            ProcessorCoderParts::MemberCreation => write!(f, "member_creation"),
             ProcessorCoderParts::UserMemberCreation => write!(f, "user_member_creation"),
             ProcessorCoderParts::UserDefinedImplStruct => write!(f, "user_defined_impl_struct"),
             ProcessorCoderParts::InitBody => write!(f, "init_body"),
@@ -104,6 +108,7 @@ impl CoderObject {
         self.code_parts.insert(ProcessorCoderParts::EndStruct, CoderObject::read_code_template(&ProcessorCoderParts::EndStruct));
         self.code_parts.insert(ProcessorCoderParts::HeadBuilder, CoderObject::read_code_template(&ProcessorCoderParts::HeadBuilder));
         self.code_parts.insert(ProcessorCoderParts::UserDefinedBuilder, CoderObject::read_code_template(&ProcessorCoderParts::UserDefinedBuilder));
+        self.code_parts.insert(ProcessorCoderParts::MemberCreation, CoderObject::read_code_template(&ProcessorCoderParts::MemberCreation));
         self.code_parts.insert(ProcessorCoderParts::UserMemberCreation, CoderObject::read_code_template(&ProcessorCoderParts::UserMemberCreation));
         self.code_parts.insert(ProcessorCoderParts::UserDefinedImplStruct, CoderObject::read_code_template(&ProcessorCoderParts::UserDefinedImplStruct));
         self.code_parts.insert(ProcessorCoderParts::InitBody, CoderObject::read_code_template(&ProcessorCoderParts::InitBody));
@@ -181,17 +186,74 @@ impl Coder {
         if self.coder_objects.contains_key(&data_name) {
             return Err(format!("An object with the name {} already exists", data_name));
         }
+        let k2_data = command.data.as_ref().ok_or("Missing data for new command")?;
+        if k2_data.is_empty() {
+            return Err("Data for new command cannot be empty".to_string());
+        }
+        if k2_data.len() > 1 {
+            return Err("Data for new command must contain only one K2Object".to_string());
+        }
+        let mut coder_object = CoderObject {
+            name: data_name.clone(),
+            type_name: data_type.clone(),
+            code_parts: HashMap::new(),
+            children: Vec::new(),
+            parameters: k2_data[0].properties.clone(),
+        };
         match data_type.as_str() {
-            "input" | "output" => {
-                Ok(response)
-            }
-            "parameter" => {
-                Ok(response)
-            }
-            "state" => {
-                Ok(response)
-            }
-            "command" => {
+            "input" | "output" | "parameter" | "state" | "command" => {
+                let split_name: Vec<&str> = data_name.split(".").collect();
+                if split_name.len() != 3 {
+                    return Err(format!("Processor name must be in the format 'library_name.processor_name'"));
+                }
+                let processor_name = format!("{}.{}", split_name[0], split_name[1]);
+                if !self.coder_objects.contains_key(&processor_name) {
+                    return Err(format!("Processor {} does not exist", processor_name));
+                }
+                let connector_type = data_type.clone();
+                let data_properties = command.
+                    data.as_ref().ok_or("Missing data for input/output creation")?.
+                    get(0).ok_or("Missing data object")?
+                    .properties.clone();
+                let data_type = data_properties.get("data_type").ok_or("Missing data_type property for input/output creation")?.clone();
+                match connector_type.as_str() {
+                    "input" | "output" => {
+                        coder_object.code_parts.insert(ProcessorCoderParts::MemberCreation, 
+                            format!("ret.get_stream_block_mut().add_{}::<{}>(\"{}\");", connector_type, data_type, data_name));
+                
+                    }
+                    "parameter" => {
+                        let value = data_properties.get("value").ok_or("Missing value property for parameter creation")?.clone();
+                        let parameter_type = data_properties.get("kind").ok_or("Missing kind property for parameter creation")?.clone();
+                        match parameter_type.as_str() {
+                            "static" | "dynamic" => {}
+                            _ => return Err("Parameter kind must be either static or dynamic".to_string()),
+                        }
+                        let parameter_value_type;
+                        match data_type.as_str() {
+                            "u8" | "u16" | "u32" | "u64" | "u128" |
+                            "i8" | "i16" | "i32" | "i64" | "i128" |
+                            "bool" => {parameter_value_type = ParameterValueType::INTEGER}
+                            "f32" | "f64" => {parameter_value_type = ParameterValueType::FLOAT}
+                            _ => return Err("Unsupported data type for parameter".to_string()),
+                        }
+                        let declaration = format!("ret.get_stream_block_mut().add_parameter::<{}>({}, \"{}\", {});", data_type, parameter_value_type, data_name, parameter_type);
+                        let initialization = format!("ret.get_stream_block_mut().set_parameter::<{}>(\"{}\", {});", data_type, data_name, value);
+                        coder_object.code_parts.insert(ProcessorCoderParts::MemberCreation, 
+                            format!("{}\n{}", declaration, initialization));
+                    }
+                    "state" => {
+                        let value = data_properties.get("value").ok_or("Missing value property for state creation")?.clone();
+                        let declaration = format!("ret.get_stream_block_mut().add_state::<{}>(\"{}\");", data_type, data_name);
+                        let initialization = format!("ret.get_stream_block_mut().set_state::<{}>(\"{}\", {});", data_type, data_name, value);
+                        coder_object.code_parts.insert(ProcessorCoderParts::MemberCreation, 
+                            format!("{}\n{}", declaration, initialization));
+                    }   
+                    "command" => {
+                    }
+                    _ => {}
+                }
+                self.coder_objects.insert(data_name, coder_object);
                 Ok(response)
             }
             "processor" => {
@@ -218,13 +280,6 @@ impl Coder {
                 }
                 let mut parameters = HashMap::new();
                 parameters.insert("path".to_string(), processor_path.clone());
-                let mut coder_object = CoderObject {
-                    name: data_name.clone(),
-                    type_name: data_type.clone(),
-                    code_parts: HashMap::new(),
-                    children: Vec::new(),
-                    parameters,
-                };
                 coder_object.init_processor_code();
                 self.coder_objects.insert(data_name.clone(), coder_object);
                 Ok(response)
@@ -287,7 +342,6 @@ impl Coder {
             "application" => {
                 Ok(response)
             }
-
             _ => {
                 // Return an error for unknown subcommands
                 Err(format!("Unknown type {}", command.tokens[2]))

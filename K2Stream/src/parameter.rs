@@ -1,3 +1,5 @@
+use std::fmt;
+
 use memory_macro::K2Memory;
 use num_traits::{Float, PrimInt};
 
@@ -13,11 +15,28 @@ pub enum ParameterType {
     STATIC,
     DYNAMIC,
 }
+impl fmt::Display for ParameterType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParameterType::STATIC => write!(f, "STATIC"),
+            ParameterType::DYNAMIC => write!(f, "DYNAMIC"),
+        }
+    }
+}
 #[derive(PartialEq, Clone)]
 pub enum ParameterValueType {
     INTEGER,
     FLOAT,
 }
+impl fmt::Display for ParameterValueType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParameterValueType::INTEGER => write!(f, "INTEGER"),
+            ParameterValueType::FLOAT => write!(f, "FLOAT"),
+        }
+    }
+}
+
 #[derive(Clone, K2Memory)]
 pub struct Parameter<T: 'static + Send + Sync> {
     pub name: DataHeader,
