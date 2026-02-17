@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard}};
 
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
-use k2_stream::{memory::{DataHeader, MemoryTrait}, parameter, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorTrait, StreamBlock, StreamState}};
+use k2_stream::{memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorTrait, StreamBlock, StreamState}};
 use crate::{K2Object, K2ReturnStruct, coder::ProcessorCoderParts};
 
 type AstReturn = Result<K2ReturnStruct, String>;

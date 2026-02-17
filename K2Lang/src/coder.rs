@@ -2,9 +2,9 @@ use std::{collections::HashMap, fmt, sync::{Arc, Mutex, MutexGuard}};
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
 
-use k2_stream::{memory::{DataHeader, MemoryTrait}, parameter::{self, ParameterValueType}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorTrait, StreamBlock, StreamState}};
+use k2_stream::{memory::{DataHeader, MemoryTrait}, parameter::ParameterValueType, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorTrait, StreamBlock, StreamState}};
 
-use crate::{K2ReturnStruct, coder};
+use crate::K2ReturnStruct;
 
 type CoderReturn = Result<K2ReturnStruct, String>;
 type CoderCallback = fn(&mut Coder, &K2ReturnStruct) -> CoderReturn;

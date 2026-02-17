@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::MutexGuard};
 use num_traits::{Float, PrimInt};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 use crate::connections::{Input, Output};
 use crate::memory::{DataHeader, DataTrait, Memory, MemoryTrait};
@@ -208,7 +209,7 @@ pub trait ProcessorTrait: ProcessorBlockTrait + Send + Sync {
         self.get_stream_block().get_processor_type()
     }
 }
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ProcessorHeader {
     pub proc_name: String,
     pub description: String,
