@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard, OnceLock}, thread
 use processor_macro::K2ProcessorBlock;
 use memory_macro::K2Memory;
 
-use crate::{memory::{DataHeader, MemoryTrait}, modes::OperativeMode, processors::{ProcessorHeader, ProcessorTrait, ProcessorBlockTrait, StreamBlock, StreamState}};
+use crate::{memory::{DataHeader, MemoryTrait}, modes::OperativeMode, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
 
 pub type Callback = fn (&mut dyn ProcessorTrait) -> Result<(), ()>;
 pub type StreamProcessorHandle = Arc<Mutex<Option<JoinHandle<Result<(),()>>>>>;
@@ -27,37 +27,6 @@ pub struct StreamController {
 }
 
 impl StreamController {
-    pub fn new() -> Result<Self, ()> {
-        let mode = OperativeMode::new("default".to_string(), 0);
-        let mut modes = HashMap::new();
-        modes.insert(0, mode);
-        
-        let mut self_instance = Self {
-            name: "StreamController".to_string(),
-            stream_id: -1 as isize,
-            header: ProcessorHeader {
-                proc_name: "StreamController".to_string(),
-                description: "A processor that controls the stream blocks and the execution of the modes".to_string(),
-                version: "0.1.0".to_string(),
-                author: "Sofia Silvestri".to_string(),
-                email: "ms.sofia.silvestri@gmail.com".to_string(),
-                license: "LGPLv2.0".to_string(),
-                repository: "".to_string(),
-            },
-            stream_block: StreamBlock::new(),
-            modes,
-            current_mode_id: 0,
-            command_map: HashMap::new(),
-            state: Arc::new(Mutex::new(StreamState::Uninitialized)),
-            processors: HashMap::new(),
-            commands_callback: HashMap::new(),
-            stream_handle: Arc::new(Mutex::new(None)),
-        };
-        self_instance.stream_block.add_input::<String>("command".to_string())?;
-        self_instance.stream_block.add_output::<Result<(), ()>>("response".to_string())?;
-        
-        Ok(self_instance)
-    }
     pub fn register_stream(mut stream: Self) -> Result<(), ()> {
         let mut stream_table = STREAM_TABLE.get_or_init(|| Mutex::new(Vec::new())).lock().map_err(|_| ())?;
         let mut stream_id_counter = STREAM_ID_COUNTER.get_or_init(|| Mutex::new(0)).lock().map_err(|_| ())?;
@@ -193,6 +162,38 @@ impl StreamController {
 }
 
 impl ProcessorTrait for StreamController {
+    fn new(_name: String) -> ProcessorNewReturn {
+        let mode = OperativeMode::new("default".to_string(), 0);
+        let mut modes = HashMap::new();
+        modes.insert(0, mode);
+
+        let mut self_instance = Self {
+            name: "StreamController".to_string(),
+            stream_id: -1 as isize,
+            header: ProcessorHeader {
+                proc_name: "StreamController".to_string(),
+                description: "A processor that controls the stream blocks and the execution of the modes".to_string(),
+                version: "0.1.0".to_string(),
+                author: "Sofia Silvestri".to_string(),
+                email: "ms.sofia.silvestri@gmail.com".to_string(),
+                license: "LGPLv2.0".to_string(),
+                repository: "".to_string(),
+            },
+            stream_block: StreamBlock::new(),
+            modes,
+            current_mode_id: 0,
+            command_map: HashMap::new(),
+            state: Arc::new(Mutex::new(StreamState::Uninitialized)),
+            processors: HashMap::new(),
+            commands_callback: HashMap::new(),
+            stream_handle: Arc::new(Mutex::new(None)),
+        };
+        self_instance.stream_block.add_input::<String>("command".to_string())?;
+        self_instance.stream_block.add_output::<Result<(), ()>>("response".to_string())?;
+
+        Ok(Box::new(self_instance))
+    }
+
     fn initialize(&mut self) -> Result<(), ()> {
         let mut state = self.state.lock().map_err(|_| ())?;
         if self.stream_id == -1 {

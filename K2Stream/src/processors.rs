@@ -8,6 +8,9 @@ use crate::memory::{DataHeader, DataTrait, Memory, MemoryTrait};
 use crate::parameter::{Parameter, ParameterType, ParameterValueType};
 use crate::states::State;
 use crate::stream_controller::{Callback, StreamController};
+
+pub type ProcessorNewReturn = Result<Box<dyn ProcessorTrait>, ()>;
+
 #[derive(PartialEq, Clone)]
 pub enum StreamType {
     NONE,
@@ -202,6 +205,7 @@ pub trait ProcessorBlockTrait: MemoryTrait + Send + Sync {
     fn get_stream_block_mut(&mut self) -> &mut StreamBlock;
 }
 pub trait ProcessorTrait: ProcessorBlockTrait + Send + Sync {
+    fn new(name: String) -> ProcessorNewReturn where Self: Sized;
     fn initialize(&mut self ) -> Result<(), ()>;
     fn process(&mut self) -> Result<(), ()>;
     fn finalize(&mut self) -> Result<(), ()>;
