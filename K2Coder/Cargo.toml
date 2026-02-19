@@ -1,0 +1,8 @@
+[package]
+name = "k2coder"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+k2_lang = { path = "../K2Lang"}
+k2_stream = { path = "../K2Stream"}

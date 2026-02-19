@@ -27,20 +27,50 @@ pub struct StreamController {
 }
 
 impl StreamController {
-    pub fn register_stream(mut stream: Self) -> Result<(), ()> {
+    pub fn create(name: String) -> Result<isize, ()> {
+        let mode = OperativeMode::new("default".to_string(), 0);
+        let mut modes = HashMap::new();
+        modes.insert(0, mode);
+
+        let mut self_instance = Self {
+            name,
+            stream_id: -1 as isize,
+            header: ProcessorHeader {
+                proc_name: "StreamController".to_string(),
+                description: "A processor that controls the stream blocks and the execution of the modes".to_string(),
+                version: "0.1.0".to_string(),
+                author: "Sofia Silvestri".to_string(),
+                email: "ms.sofia.silvestri@gmail.com".to_string(),
+                license: "LGPLv2.0".to_string(),
+                repository: "".to_string(),
+            },
+            stream_block: StreamBlock::new(),
+            modes,
+            current_mode_id: 0,
+            command_map: HashMap::new(),
+            state: Arc::new(Mutex::new(StreamState::Uninitialized)),
+            processors: HashMap::new(),
+            commands_callback: HashMap::new(),
+            stream_handle: Arc::new(Mutex::new(None)),
+        };
+        self_instance.stream_block.add_input::<String>("command".to_string())?;
+        self_instance.stream_block.add_output::<Result<(), ()>>("response".to_string())?;
         let mut stream_table = STREAM_TABLE.get_or_init(|| Mutex::new(Vec::new())).lock().map_err(|_| ())?;
         let mut stream_id_counter = STREAM_ID_COUNTER.get_or_init(|| Mutex::new(0)).lock().map_err(|_| ())?;
         *stream_id_counter += 1;
-        stream.stream_id = *stream_id_counter;
-        stream.stream_block.set_stream_id(*stream_id_counter);
-        stream.register_commands()?;
-        stream_table.push(Arc::new(Mutex::new(stream)));
-        Ok(())
+        self_instance.stream_id = *stream_id_counter;
+        self_instance.stream_block.set_stream_id(*stream_id_counter);
+        self_instance.register_commands()?;
+        stream_table.push(Arc::new(Mutex::new(self_instance)));
+        Ok(*stream_id_counter)
     }
-    pub fn get_stream(id: isize) -> Result<Arc<Mutex<Self>>, ()> {
+    pub fn get_stream_by_id(id: isize) -> Result<Arc<Mutex<Self>>, ()> {
         let stream_table = STREAM_TABLE.get_or_init(|| Mutex::new(Vec::new())).lock().map_err(|_| ())?;
         let stream_lock = stream_table.get((id - 1) as usize).ok_or(())?;
         Ok(Arc::clone(stream_lock))
+    }
+    pub fn get_stream_by_name(_name: String) -> Result<Arc<Mutex<Self>>, ()> {
+        unimplemented!()
     }
     pub fn register_commands(&mut self) -> Result<(), ()> {
         self.stream_block.add_command("init".to_string(), |proc| {
@@ -64,7 +94,7 @@ impl StreamController {
         self.stream_handle = handle;
     }
     pub fn run(stream_id: isize) -> Result<(), ()> {
-        let stream = Self::get_stream(stream_id)?;
+        let stream = Self::get_stream_by_id(stream_id)?;
         let handle: JoinHandle<Result<(), ()>> = std::thread::spawn(move || {
             let mut stream = stream.lock().map_err(|_| ())?;
             {
@@ -87,7 +117,7 @@ impl StreamController {
             }
             Ok(())
         });
-        let stream = Self::get_stream(stream_id)?;
+        let stream = Self::get_stream_by_id(stream_id)?;
         stream.lock().map_err(|_|())?.set_stream_handle(Arc::new(Mutex::new(Some(handle))));
         Ok(())
     }
@@ -121,6 +151,12 @@ impl StreamController {
             self.modes.insert(id, mode);
             Ok(())
         }
+    }
+    pub fn get_mode(&self, id: &usize) ->  Result<&OperativeMode, ()> {
+        self.modes.get(id).ok_or(())
+    }
+    pub fn get_mode_mut(&mut self, id: &usize) ->  Result<&mut OperativeMode, ()> {
+        self.modes.get_mut(id).ok_or(())
     }
     pub fn set_current_mode(&mut self, id: usize) -> Result<(), ()> {
         if self.modes.contains_key(&id) {
@@ -159,39 +195,20 @@ impl StreamController {
         let callback = self.commands_callback.get(&command).ok_or(())?;
         (callback)(block.as_mut())
     }
+    pub fn add_processor(&mut self, name: String, processor: Box<dyn ProcessorTrait>) -> Result<(), ()> {
+        if self.processors.contains_key(&name.clone()) {
+            return Err(());
+        }
+        self.processors.insert( name, processor);
+        Ok(())
+    }
+    pub fn get_processors(&self, processors: Vec<String>) -> Result<Vec<Box<dyn ProcessorTrait>>, ()> {
+    }
 }
 
 impl ProcessorTrait for StreamController {
     fn new(_name: String) -> ProcessorNewReturn {
-        let mode = OperativeMode::new("default".to_string(), 0);
-        let mut modes = HashMap::new();
-        modes.insert(0, mode);
-
-        let mut self_instance = Self {
-            name: "StreamController".to_string(),
-            stream_id: -1 as isize,
-            header: ProcessorHeader {
-                proc_name: "StreamController".to_string(),
-                description: "A processor that controls the stream blocks and the execution of the modes".to_string(),
-                version: "0.1.0".to_string(),
-                author: "Sofia Silvestri".to_string(),
-                email: "ms.sofia.silvestri@gmail.com".to_string(),
-                license: "LGPLv2.0".to_string(),
-                repository: "".to_string(),
-            },
-            stream_block: StreamBlock::new(),
-            modes,
-            current_mode_id: 0,
-            command_map: HashMap::new(),
-            state: Arc::new(Mutex::new(StreamState::Uninitialized)),
-            processors: HashMap::new(),
-            commands_callback: HashMap::new(),
-            stream_handle: Arc::new(Mutex::new(None)),
-        };
-        self_instance.stream_block.add_input::<String>("command".to_string())?;
-        self_instance.stream_block.add_output::<Result<(), ()>>("response".to_string())?;
-
-        Ok(Box::new(self_instance))
+        Err(())
     }
 
     fn initialize(&mut self) -> Result<(), ()> {
@@ -201,6 +218,9 @@ impl ProcessorTrait for StreamController {
         }
         if *state == StreamState::Running {
             return Err(());
+        }
+        for mode in self.modes.values_mut() {
+            mode.initialize()?;
         }
         *state = StreamState::Initialized;
         Ok(())

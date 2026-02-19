@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::{collections::HashMap, sync::MutexGuard};
 use num_traits::{Float, PrimInt};
 use rand::Rng;
@@ -204,7 +205,7 @@ pub trait ProcessorBlockTrait: MemoryTrait + Send + Sync {
     fn get_stream_block(&self) -> &StreamBlock;
     fn get_stream_block_mut(&mut self) -> &mut StreamBlock;
 }
-pub trait ProcessorTrait: ProcessorBlockTrait + Send + Sync {
+pub trait ProcessorTrait: ProcessorBlockTrait + Send + Sync + Any {
     fn new(name: String) -> ProcessorNewReturn where Self: Sized;
     fn initialize(&mut self ) -> Result<(), ()>;
     fn process(&mut self) -> Result<(), ()>;

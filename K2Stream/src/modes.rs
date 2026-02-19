@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::{Arc, Mutex, OnceLock}, thread::JoinHandle};
 
-use crate::{connections::ConnectionGraph, processors::{ProcessorTrait, StreamType}};
+use crate::{connections::ConnectionGraph, processors::{ProcessorTrait, StreamType}, stream_controller::StreamController};
 
 static TASK_ID_COUNTER: OnceLock<Mutex<isize>> = OnceLock::new();
 
@@ -19,7 +19,7 @@ pub struct Chain {
     pub name: String,
     stream_id: isize,
     task_id: isize,
-    blocks: HashMap<String, Box<dyn ProcessorTrait>>,
+    blocks: Vec<String>,
     connections: ConnectionGraph,
     input_present: bool,
     initialized: bool,
@@ -33,7 +33,7 @@ impl Chain {
         *task_lock = task_id + 1;
         Self {
             name,
-            blocks: HashMap::new(),
+            blocks: Vec::new(),
             connections: ConnectionGraph::new(),
             input_present: false,
             initialized: false,
@@ -51,7 +51,8 @@ impl Chain {
     pub fn set_stream_id(&mut self, stream_id: isize) {
         self.stream_id = stream_id;
     }
-    pub fn add_block(&mut self, mut block: Box<dyn ProcessorTrait>) -> Result<(), ()> {
+    pub fn 
+    add_block(&mut self, mut block: Box<dyn ProcessorTrait>) -> Result<(), ()> {
         if block.get_processor_type() == StreamType::RECEIVER {
             if self.input_present {
                 return Err(())
@@ -60,14 +61,13 @@ impl Chain {
         }
         block.get_stream_block_mut().set_task_id(self.task_id);
         block.get_stream_block_mut().set_stream_id(self.stream_id);
-        self.blocks.insert(block.name().clone(), block);
+        let block_name = block.name().clone();
+        let binding = StreamController::get_stream_by_id(self.task_id)?;
+        let mut streamer = binding.lock().map_err(|_| ())?;
+        (*streamer).add_processor(block.name().clone(), block)?;
+        
+        self.blocks.push(block_name.clone());
         Ok(())
-    }
-    pub fn get_blocks(&self, id: String) -> Result<&Box<dyn ProcessorTrait>, ()> {
-        self.blocks.get(&id).ok_or(())
-    }
-    pub fn get_blocks_mut(&mut self, id: String) -> Result<&mut Box<dyn ProcessorTrait>, ()> {
-        self.blocks.get_mut(&id).ok_or(())
     }
 
     pub fn initialize(&mut self) -> Result<(), ()> {
@@ -144,7 +144,12 @@ impl OperativeMode {
         self.chains.insert(name, Arc::new(Mutex::new(chain)));
         Ok(())
     }
-    
+    pub fn get_chain(&self, name: &String) -> Result<&Arc<Mutex<Chain>>, ()> {
+        self.chains.get(name).ok_or(())
+    }
+    pub fn get_chain_mut(&mut self, name: &String) -> Result<&mut Arc<Mutex<Chain>>, ()> {
+        self.chains.get_mut(name).ok_or(())
+    }
     pub fn initialize(&mut self) -> Result<(), ()> {
         if self.stream_id == -1 {
             return Err(())

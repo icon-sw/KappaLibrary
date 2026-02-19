@@ -1,4 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["K2Lang","K2Stream", "examples/empty_processor", "interfaces", "macro/memory_macro",
-    "macro/processor_macro"]
+members = ["K2Lang",
+    "K2Stream",
+    "K2Coder",
+    "macro/memory_macro",
+    "macro/processor_macro",
+    "examples/empty_processor",]
