@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard}};
 
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
-use k2_stream::{memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorTrait, StreamBlock, StreamState}};
+use k2_stream::{memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
 use crate::{K2ReturnStruct, Token};
 
 type ParserReturn = Result<Token, String>;
@@ -19,35 +19,6 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new() -> Result<Self, ()> {
-        let mut callbacks_cmd: HashMap<String, ParserCallback> = HashMap::new();
-        callbacks_cmd.insert("new".to_string(), Parser::parse_new);
-        callbacks_cmd.insert("add".to_string(), Parser::parse_add);
-        callbacks_cmd.insert("delete".to_string(), Parser::parse_delete);
-        callbacks_cmd.insert("set".to_string(), Parser::parse_set);
-        callbacks_cmd.insert("connect".to_string(), Parser::parse_connect);
-        callbacks_cmd.insert("disconnect".to_string(), Parser::parse_disconnect);
-        callbacks_cmd.insert("exec".to_string(), Parser::parse_exec);
-
-        let mut self_instance = Self {
-            name: "Parser".to_string(),
-            header: ProcessorHeader {
-                proc_name: "Parser".to_string(),
-                description: "A processor that parses the commands and executes the corresponding actions".to_string(),
-                version: "0.1.0".to_string(),
-                author: "Sofia Silvestri".to_string(),
-                email: "ms.sofia.silvestri@gmail.com".to_string(),
-                license: "LGPLv2.0".to_string(),
-                repository: "".to_string(),
-            },
-            stream_block: StreamBlock::new(),
-            state: Arc::new(Mutex::new(StreamState::Initialized)),
-            callbacks_cmd,
-        };
-        self_instance.stream_block.add_input::<String>("command".to_string())?;
-        self_instance.stream_block.add_output::<K2ReturnStruct>("response".to_string())?;
-        Ok(self_instance)
-    }
     pub fn split_commands(&self, command: &String) -> Vec<Vec<String>> {
         let lines = command.lines();
         let mut commands: Vec<String> = Vec::new();
@@ -241,6 +212,35 @@ impl Parser {
 }
 
 impl ProcessorTrait for Parser {
+    fn new(name: String) -> ProcessorNewReturn {
+        let mut callbacks_cmd: HashMap<String, ParserCallback> = HashMap::new();
+        callbacks_cmd.insert("new".to_string(), Parser::parse_new);
+        callbacks_cmd.insert("add".to_string(), Parser::parse_add);
+        callbacks_cmd.insert("delete".to_string(), Parser::parse_delete);
+        callbacks_cmd.insert("set".to_string(), Parser::parse_set);
+        callbacks_cmd.insert("connect".to_string(), Parser::parse_connect);
+        callbacks_cmd.insert("disconnect".to_string(), Parser::parse_disconnect);
+        callbacks_cmd.insert("exec".to_string(), Parser::parse_exec);
+
+        let mut self_instance = Self {
+            name: name.clone(),
+            header: ProcessorHeader {
+                proc_name: "Parser".to_string(),
+                description: "A processor that parses the commands and executes the corresponding actions".to_string(),
+                version: "0.1.0".to_string(),
+                author: "Sofia Silvestri".to_string(),
+                email: "ms.sofia.silvestri@gmail.com".to_string(),
+                license: "LGPLv2.0".to_string(),
+                repository: "".to_string(),
+            },
+            stream_block: StreamBlock::new(),
+            state: Arc::new(Mutex::new(StreamState::Initialized)),
+            callbacks_cmd,
+        };
+        self_instance.stream_block.add_input::<String>("command".to_string())?;
+        self_instance.stream_block.add_output::<K2ReturnStruct>("response".to_string())?;
+        Ok(Box::new(self_instance))
+    }
     fn initialize(&mut self) -> Result<(), ()> {
         let mut state = self.state.lock().map_err(|_| ())?;
         *state = StreamState::Initialized;

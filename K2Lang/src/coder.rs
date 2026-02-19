@@ -2,118 +2,110 @@ use std::{collections::HashMap, fmt, sync::{Arc, Mutex, MutexGuard}};
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
 
-use k2_stream::{memory::{DataHeader, MemoryTrait}, parameter::ParameterValueType, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorTrait, StreamBlock, StreamState}};
+use k2_stream::{memory::{DataHeader, MemoryTrait}, parameter::ParameterValueType, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
 
 use crate::K2ReturnStruct;
 
 type CoderReturn = Result<K2ReturnStruct, String>;
 type CoderCallback = fn(&mut Coder, &K2ReturnStruct) -> CoderReturn;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ProcessorCoderParts {
-    HeadMod,
-    UsedDefinedCode,
-    HeadStruct,
-    UserDefinedStruct,
-    EndStruct,
-    HeadBuilder,
-    UserDefinedBuilder,
-    MemberCreation,
+pub enum ProcessorCodePart {
+    K2Import,
+    UserImport,
+    UserStruct,
+    K2InitCode,
+    UserInitCode,
+    K2MemberCreation,
     UserMemberCreation,
-    UserDefinedImplStruct,
-    InitBody,
-    ProcessBody,
-    FinalizeBody,
+    InitializeCode,
+    ProcessCode,
+    FinalizeCode,
+    UserCode,
 }
 
-impl TryFrom<u8> for ProcessorCoderParts {
+impl TryFrom<u8> for ProcessorCodePart {
     type Error = ();
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(ProcessorCoderParts::HeadMod),
-            1 => Ok(ProcessorCoderParts::UsedDefinedCode),
-            2 => Ok(ProcessorCoderParts::HeadStruct),
-            3 => Ok(ProcessorCoderParts::UserDefinedStruct),
-            4 => Ok(ProcessorCoderParts::EndStruct),
-            5 => Ok(ProcessorCoderParts::HeadBuilder),
-            6 => Ok(ProcessorCoderParts::UserDefinedBuilder),
-            7 => Ok(ProcessorCoderParts::MemberCreation),
-            8 => Ok(ProcessorCoderParts::UserMemberCreation),
-            9 => Ok(ProcessorCoderParts::UserDefinedImplStruct),
-            10 => Ok(ProcessorCoderParts::InitBody),
-            11 => Ok(ProcessorCoderParts::ProcessBody),
-            12 => Ok(ProcessorCoderParts::FinalizeBody),
+            // 0 => Ok(ProcessorCodePart::K2Import), Make not writable from user
+            1 => Ok(ProcessorCodePart::UserImport),
+            2 => Ok(ProcessorCodePart::UserStruct),
+            // 3 => Ok(ProcessorCodePart::K2InitCode), Make not writable from user
+            4 => Ok(ProcessorCodePart::UserInitCode),
+            // 5 => Ok(ProcessorCodePart::K2MemberCreation), Make not writable from user
+            6 => Ok(ProcessorCodePart::UserMemberCreation),
+            7 => Ok(ProcessorCodePart::InitializeCode),
+            8 => Ok(ProcessorCodePart::ProcessCode),
+            9 => Ok(ProcessorCodePart::FinalizeCode),
+            10 => Ok(ProcessorCodePart::UserCode),
             _ => Err(()),
         }
     }
 }
-impl TryFrom<String> for ProcessorCoderParts {
+
+impl TryFrom<String> for ProcessorCodePart {
     type Error = ();
     fn try_from(value: String) -> Result<Self, Self::Error> {
         match value.as_str() {
-            "header_processor" => Ok(ProcessorCoderParts::HeadMod),
-            "user_defined_code" => Ok(ProcessorCoderParts::UsedDefinedCode),
-            "processor_struct_header" => Ok(ProcessorCoderParts::HeadStruct),
-            "user_defined_struct" => Ok(ProcessorCoderParts::UserDefinedStruct),
-            "end_struct" => Ok(ProcessorCoderParts::EndStruct),
-            "processor_builder_header" => Ok(ProcessorCoderParts::HeadBuilder),
-            "user_defined_builder" => Ok(ProcessorCoderParts::UserDefinedBuilder),
-            "member_creation" => Ok(ProcessorCoderParts::MemberCreation),
-            "user_member_creation" => Ok(ProcessorCoderParts::UserMemberCreation),
-            "user_defined_impl_struct" => Ok(ProcessorCoderParts::UserDefinedImplStruct),
-            "init_body" => Ok(ProcessorCoderParts::InitBody),
-            "process_body" => Ok(ProcessorCoderParts::ProcessBody),
-            "finalize_body" => Ok(ProcessorCoderParts::FinalizeBody),
+            "k2_import" => Ok(ProcessorCodePart::K2Import),
+            "user_import" => Ok(ProcessorCodePart::UserImport),
+            "user_struct" => Ok(ProcessorCodePart::UserStruct),
+            "k2_init_code" => Ok(ProcessorCodePart::K2InitCode),
+            "user_init_code" => Ok(ProcessorCodePart::UserInitCode),
+            "k2_member_creation" => Ok(ProcessorCodePart::K2MemberCreation),
+            "user_member_creation" => Ok(ProcessorCodePart::UserMemberCreation),
+            "initialize_code" => Ok(ProcessorCodePart::InitializeCode),
+            "process_code" => Ok(ProcessorCodePart::ProcessCode),
+            "finalize_code" => Ok(ProcessorCodePart::FinalizeCode),
+            "user_code" => Ok(ProcessorCodePart::UserCode),
             _ => Err(()),
         }
     }
 }
-impl fmt::Display for ProcessorCoderParts {
+impl fmt::Display for ProcessorCodePart {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ProcessorCoderParts::HeadMod => write!(f, "header_processor"),
-            ProcessorCoderParts::UsedDefinedCode => write!(f, "user_defined_code"),
-            ProcessorCoderParts::HeadStruct => write!(f, "processor_struct_header"),
-            ProcessorCoderParts::UserDefinedStruct => write!(f, "user_defined_struct"),
-            ProcessorCoderParts::EndStruct => write!(f, "end_struct"),
-            ProcessorCoderParts::HeadBuilder => write!(f, "processor_builder_header"),
-            ProcessorCoderParts::UserDefinedBuilder => write!(f, "user_defined_builder"),
-            ProcessorCoderParts::MemberCreation => write!(f, "member_creation"),
-            ProcessorCoderParts::UserMemberCreation => write!(f, "user_member_creation"),
-            ProcessorCoderParts::UserDefinedImplStruct => write!(f, "user_defined_impl_struct"),
-            ProcessorCoderParts::InitBody => write!(f, "init_body"),
-            ProcessorCoderParts::ProcessBody => write!(f, "process_body"),
-            ProcessorCoderParts::FinalizeBody => write!(f, "finalize_body"),
+            ProcessorCodePart::K2Import => write!(f, "k2_import"),
+            ProcessorCodePart::UserImport => write!(f, "user_import"),
+            ProcessorCodePart::UserStruct => write!(f, "user_struct"),
+            ProcessorCodePart::K2InitCode => write!(f, "k2_init_code"),
+            ProcessorCodePart::UserInitCode => write!(f, "user_init_code"),
+            ProcessorCodePart::K2MemberCreation => write!(f, "k2_member_creation"),
+            ProcessorCodePart::UserMemberCreation => write!(f, "user_member_creation"),
+            ProcessorCodePart::InitializeCode => write!(f, "initialize_code"),
+            ProcessorCodePart::ProcessCode => write!(f, "process_code"),
+            ProcessorCodePart::FinalizeCode => write!(f, "finalize_code"),
+            ProcessorCodePart::UserCode => write!(f, "user_code"),
         }
     }
 }
+
 #[derive(Debug, Clone)]
 pub struct CoderObject {
     pub name: String,
     pub type_name: String,
-    pub code_parts: HashMap<ProcessorCoderParts, String>,
+    pub code_parts: HashMap<ProcessorCodePart, String>,
     pub children: Vec<String>,
     pub parameters: HashMap<String, String>,
 }
 
 impl CoderObject {
-    pub fn read_code_template(part: &ProcessorCoderParts) -> String {
+    pub fn read_code_template(part: &ProcessorCodePart) -> String {
         let template_path = format!("templates/{}.template", part);
         std::fs::read_to_string(&template_path).unwrap_or_else(|_| String::new())
     }
     fn init_processor_code(&mut self) {
-        self.code_parts.insert(ProcessorCoderParts::HeadMod, CoderObject::read_code_template(&ProcessorCoderParts::HeadMod));
-        self.code_parts.insert(ProcessorCoderParts::UsedDefinedCode, CoderObject::read_code_template(&ProcessorCoderParts::UsedDefinedCode));
-        self.code_parts.insert(ProcessorCoderParts::HeadStruct, CoderObject::read_code_template(&ProcessorCoderParts::HeadStruct));
-        self.code_parts.insert(ProcessorCoderParts::UserDefinedStruct, CoderObject::read_code_template(&ProcessorCoderParts::UserDefinedStruct));
-        self.code_parts.insert(ProcessorCoderParts::EndStruct, CoderObject::read_code_template(&ProcessorCoderParts::EndStruct));
-        self.code_parts.insert(ProcessorCoderParts::HeadBuilder, CoderObject::read_code_template(&ProcessorCoderParts::HeadBuilder));
-        self.code_parts.insert(ProcessorCoderParts::UserDefinedBuilder, CoderObject::read_code_template(&ProcessorCoderParts::UserDefinedBuilder));
-        self.code_parts.insert(ProcessorCoderParts::MemberCreation, CoderObject::read_code_template(&ProcessorCoderParts::MemberCreation));
-        self.code_parts.insert(ProcessorCoderParts::UserMemberCreation, CoderObject::read_code_template(&ProcessorCoderParts::UserMemberCreation));
-        self.code_parts.insert(ProcessorCoderParts::UserDefinedImplStruct, CoderObject::read_code_template(&ProcessorCoderParts::UserDefinedImplStruct));
-        self.code_parts.insert(ProcessorCoderParts::InitBody, CoderObject::read_code_template(&ProcessorCoderParts::InitBody));
-        self.code_parts.insert(ProcessorCoderParts::ProcessBody, CoderObject::read_code_template(&ProcessorCoderParts::ProcessBody));
-        self.code_parts.insert(ProcessorCoderParts::FinalizeBody, CoderObject::read_code_template(&ProcessorCoderParts::FinalizeBody));
+        self.code_parts.insert(ProcessorCodePart::K2Import, CoderObject::read_code_template(&ProcessorCodePart::K2Import));
+        self.code_parts.insert(ProcessorCodePart::UserImport, CoderObject::read_code_template(&ProcessorCodePart::UserImport));
+        self.code_parts.insert(ProcessorCodePart::UserStruct, CoderObject::read_code_template(&ProcessorCodePart::UserStruct));
+        self.code_parts.insert(ProcessorCodePart::K2InitCode, CoderObject::read_code_template(&ProcessorCodePart::K2InitCode));
+        self.code_parts.insert(ProcessorCodePart::UserInitCode, CoderObject::read_code_template(&ProcessorCodePart::UserInitCode));
+        self.code_parts.insert(ProcessorCodePart::K2MemberCreation, CoderObject::read_code_template(&ProcessorCodePart::K2MemberCreation));
+        self.code_parts.insert(ProcessorCodePart::UserMemberCreation, CoderObject::read_code_template(&ProcessorCodePart::UserMemberCreation));
+        self.code_parts.insert(ProcessorCodePart::InitializeCode, CoderObject::read_code_template(&ProcessorCodePart::InitializeCode));
+        self.code_parts.insert(ProcessorCodePart::ProcessCode, CoderObject::read_code_template(&ProcessorCodePart::ProcessCode));
+        self.code_parts.insert(ProcessorCodePart::FinalizeCode, CoderObject::read_code_template(&ProcessorCodePart::FinalizeCode));
+        self.code_parts.insert(ProcessorCodePart::UserCode, CoderObject::read_code_template(&ProcessorCodePart::UserCode));
     }
 }
 #[derive(K2Memory, K2ProcessorBlock)]
@@ -128,43 +120,6 @@ pub struct Coder {
 }
 
 impl Coder {
-    pub fn new(name: String) -> Result<Self, ()> {
-        let mut callbacks_cmd: HashMap<String, CoderCallback> = HashMap::new();
-        callbacks_cmd.insert("new".to_string(), Coder::proc_new);
-        callbacks_cmd.insert("add".to_string(), Coder::proc_add);
-        callbacks_cmd.insert("delete".to_string(), Coder::proc_delete);
-        callbacks_cmd.insert("set".to_string(), Coder::proc_set);
-        callbacks_cmd.insert("connect".to_string(), Coder::proc_connect);
-        callbacks_cmd.insert("disconnect".to_string(), Coder::proc_disconnect);
-        callbacks_cmd.insert("exec".to_string(), Coder::proc_exec);
-        let cargo_path;
-        if let Some(path) = std::env::var_os("HOME") {
-            cargo_path = format!("{}/.cargo/bin/cargo", path.into_string().unwrap());
-        } else {
-            cargo_path = "cargo".to_string();
-        }
-        let mut coder = Self {
-            name: name.clone(),
-            header: ProcessorHeader {
-                proc_name: "Coder".to_string(),
-                description: "A processor that parses the commands and executes the corresponding actions".to_string(),
-                version: "0.1.0".to_string(),
-                author: "Sofia Silvestri".to_string(),
-                email: "ms.sofia.silvestri@gmail.com".to_string(),
-                license: "LGPLv2.0".to_string(),
-                repository: "".to_string(),
-            },
-            stream_block: StreamBlock::new(),
-            state: Arc::new(Mutex::new(StreamState::Initialized)),
-            cargo_path,
-            coder_objects: HashMap::new(),
-            callbacks_cmd,
-        };
-        coder.stream_block.add_input::<K2ReturnStruct>("command".to_string())?;
-        coder.stream_block.add_output::<K2ReturnStruct>("response".to_string())?;
-        Ok(coder)
-    }
-    
     fn generate(&self) -> CoderReturn {
         // Placeholder for code generation logic
         Ok(K2ReturnStruct {
@@ -218,7 +173,7 @@ impl Coder {
                 let data_type = data_properties.get("data_type").ok_or("Missing data_type property for input/output creation")?.clone();
                 match connector_type.as_str() {
                     "input" | "output" => {
-                        coder_object.code_parts.insert(ProcessorCoderParts::MemberCreation, 
+                        coder_object.code_parts.insert(ProcessorCodePart::K2MemberCreation, 
                             format!("ret.get_stream_block_mut().add_{}::<{}>(\"{}\");", connector_type, data_type, data_name));
                 
                     }
@@ -239,14 +194,14 @@ impl Coder {
                         }
                         let declaration = format!("ret.get_stream_block_mut().add_parameter::<{}>({}, \"{}\", {});", data_type, parameter_value_type, data_name, parameter_type);
                         let initialization = format!("ret.get_stream_block_mut().set_parameter::<{}>(\"{}\", {});", data_type, data_name, value);
-                        coder_object.code_parts.insert(ProcessorCoderParts::MemberCreation, 
+                        coder_object.code_parts.insert(ProcessorCodePart::K2MemberCreation, 
                             format!("{}\n{}", declaration, initialization));
                     }
                     "state" => {
                         let value = data_properties.get("value").ok_or("Missing value property for state creation")?.clone();
                         let declaration = format!("ret.get_stream_block_mut().add_state::<{}>(\"{}\");", data_type, data_name);
                         let initialization = format!("ret.get_stream_block_mut().set_state::<{}>(\"{}\", {});", data_type, data_name, value);
-                        coder_object.code_parts.insert(ProcessorCoderParts::MemberCreation, 
+                        coder_object.code_parts.insert(ProcessorCodePart::K2MemberCreation, 
                             format!("{}\n{}", declaration, initialization));
                     }   
                     "command" => {
@@ -414,6 +369,42 @@ impl Coder {
 }
 
 impl ProcessorTrait for Coder {
+    fn new(name: String) -> ProcessorNewReturn {
+        let mut callbacks_cmd: HashMap<String, CoderCallback> = HashMap::new();
+        callbacks_cmd.insert("new".to_string(), Coder::proc_new);
+        callbacks_cmd.insert("add".to_string(), Coder::proc_add);
+        callbacks_cmd.insert("delete".to_string(), Coder::proc_delete);
+        callbacks_cmd.insert("set".to_string(), Coder::proc_set);
+        callbacks_cmd.insert("connect".to_string(), Coder::proc_connect);
+        callbacks_cmd.insert("disconnect".to_string(), Coder::proc_disconnect);
+        callbacks_cmd.insert("exec".to_string(), Coder::proc_exec);
+        let cargo_path;
+        if let Some(path) = std::env::var_os("HOME") {
+            cargo_path = format!("{}/.cargo/bin/cargo", path.into_string().unwrap());
+        } else {
+            cargo_path = "cargo".to_string();
+        }
+        let mut coder = Self {
+            name: name.clone(),
+            header: ProcessorHeader {
+                proc_name: "Coder".to_string(),
+                description: "A processor that parses the commands and executes the corresponding actions".to_string(),
+                version: "0.1.0".to_string(),
+                author: "Sofia Silvestri".to_string(),
+                email: "ms.sofia.silvestri@gmail.com".to_string(),
+                license: "LGPLv2.0".to_string(),
+                repository: "".to_string(),
+            },
+            stream_block: StreamBlock::new(),
+            state: Arc::new(Mutex::new(StreamState::Initialized)),
+            cargo_path,
+            coder_objects: HashMap::new(),
+            callbacks_cmd,
+        };
+        coder.stream_block.add_input::<K2ReturnStruct>("command".to_string())?;
+        coder.stream_block.add_output::<K2ReturnStruct>("response".to_string())?;
+        Ok(Box::new(coder))
+    }
     fn initialize(&mut self ) -> Result<(), ()> {
         Ok(())
     }

@@ -1,0 +1,12 @@
+name: name.clone(),
+header: ProcessorHeader {
+    proc_name: "FakeProcessor".to_string(),
+    description: "A fake processor with no functionality".to_string(),
+    version: "0.1.0".to_string(),
+    author: "Sofia".to_string(),
+    email: "ms.sofia.silvestri@gmail.com".to_string(),
+    license: "LGPLv2.0".to_string(),
+    repository: "".to_string(),
+},
+stream_block: StreamBlock::new(),
+state: Arc::new(Mutex::new(StreamState::Uninitialized)),

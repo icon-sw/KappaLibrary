@@ -1,0 +1,3 @@
+fn initialize(&mut self ) -> Result<(), ()> {
+    Ok(()) // INITIALIZE_CODE
+}

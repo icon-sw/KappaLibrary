@@ -2,8 +2,8 @@ use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard}};
 
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
-use k2_stream::{memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorTrait, StreamBlock, StreamState}};
-use crate::{K2Object, K2ReturnStruct, coder::ProcessorCoderParts};
+use k2_stream::{memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
+use crate::{K2Object, K2ReturnStruct, coder::ProcessorCodePart};
 
 type AstReturn = Result<K2ReturnStruct, String>;
 type AstCallback = fn(&mut AstProcessor, &K2ReturnStruct) -> AstReturn;
@@ -20,32 +20,6 @@ pub struct AstProcessor {
 }
 
 impl AstProcessor {
-    pub fn new() -> Self {
-        let mut callbacks_cmd: HashMap<String, AstCallback> = HashMap::new();
-        callbacks_cmd.insert("new".to_string(), AstProcessor::parse_new);
-        callbacks_cmd.insert("add".to_string(), AstProcessor::parse_add);
-        callbacks_cmd.insert("delete".to_string(), AstProcessor::parse_delete);
-        callbacks_cmd.insert("set".to_string(), AstProcessor::parse_set);
-        callbacks_cmd.insert("connect".to_string(), AstProcessor::parse_connect);
-        callbacks_cmd.insert("disconnect".to_string(), AstProcessor::parse_disconnect);
-        callbacks_cmd.insert("exec".to_string(), AstProcessor::parse_exec);
-        AstProcessor {
-            name: "AstProcessor".to_string(),
-            header: ProcessorHeader {
-                proc_name: "AstProcessor".to_string(),
-                description: "The ast analyzer of K2Lang".to_string(),
-                version: "0.1.0".to_string(),
-                author: "Sofia Silvestri".to_string(),
-                email: "ms.sofia.silvestri@gmail.com".to_string(),
-                license: "LGPLv2.0".to_string(),
-                repository: "".to_string(),
-            },
-            stream_block: StreamBlock::new(),
-            state: Arc::new(Mutex::new(StreamState::Uninitialized)),
-            objects: HashMap::new(),
-            callbacks_cmd,
-        }
-    }
     pub fn parse_new(&mut self, k2_parse_struct: &K2ReturnStruct) -> AstReturn {
 
         let object_type = &k2_parse_struct.tokens[1];
@@ -315,7 +289,7 @@ impl AstProcessor {
                 if let Some(parent_object) = self.objects.get(&parent_name) {
                     if parent_object.object_type == "processor" {
                         let code_part = &split_name[2];
-                        ProcessorCoderParts::try_from(code_part.clone()).map_err(|_| "Invalid code part".to_string())?;
+                        ProcessorCodePart::try_from(code_part.clone()).map_err(|_| "Invalid code part".to_string())?;
                     } else {
                         return Err("Object does not exist".to_string());
                     }
@@ -461,6 +435,33 @@ impl AstProcessor {
 }
 
 impl ProcessorTrait for AstProcessor {
+    fn new(name: String) -> ProcessorNewReturn {
+        let mut callbacks_cmd: HashMap<String, AstCallback> = HashMap::new();
+        callbacks_cmd.insert("new".to_string(), AstProcessor::parse_new);
+        callbacks_cmd.insert("add".to_string(), AstProcessor::parse_add);
+        callbacks_cmd.insert("delete".to_string(), AstProcessor::parse_delete);
+        callbacks_cmd.insert("set".to_string(), AstProcessor::parse_set);
+        callbacks_cmd.insert("connect".to_string(), AstProcessor::parse_connect);
+        callbacks_cmd.insert("disconnect".to_string(), AstProcessor::parse_disconnect);
+        callbacks_cmd.insert("exec".to_string(), AstProcessor::parse_exec);
+        let ret = AstProcessor {
+            name,
+            header: ProcessorHeader {
+                proc_name: "AstProcessor".to_string(),
+                description: "The ast analyzer of K2Lang".to_string(),
+                version: "0.1.0".to_string(),
+                author: "Sofia Silvestri".to_string(),
+                email: "ms.sofia.silvestri@gmail.com".to_string(),
+                license: "LGPLv2.0".to_string(),
+                repository: "".to_string(),
+            },
+            stream_block: StreamBlock::new(),
+            state: Arc::new(Mutex::new(StreamState::Uninitialized)),
+            objects: HashMap::new(),
+            callbacks_cmd,
+        };
+        Ok(Box::new(ret))
+    }
     fn initialize(&mut self ) -> Result<(), ()> {
         self.stream_block.add_input::<K2ReturnStruct>("k2_parse_struct.tokens".to_string())?;
         self.stream_block.add_output::<K2ReturnStruct>("response".to_string())?;

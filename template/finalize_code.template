@@ -1,0 +1,3 @@
+fn finalize(&mut self) -> Result<(), ()> {
+    Ok(()) // FINALIZE_CODE
+}

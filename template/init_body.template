@@ -1,4 +1,0 @@
-impl ProcessorTrait for {} {{
-    fn initialize(&mut self ) -> Result<(), ()> {{
-        Ok(())
-    }}

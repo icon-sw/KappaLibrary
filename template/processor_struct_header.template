@@ -1,7 +1,0 @@
-#[derive(K2Memory, K2ProcessorBlock)]
-pub struct {} {{
-    pub name: String,
-    pub header: ProcessorHeader,
-    stream_block: StreamBlock,
-    state: Arc<Mutex<StreamState>>,
-

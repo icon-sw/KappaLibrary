@@ -1,5 +1,0 @@
-    fn finalize(&mut self) -> Result<(), ()> {{
-        *self.state.lock().map_err(|_| ())? = StreamState::Waiting;
-        Ok(())
-    }}
-}}

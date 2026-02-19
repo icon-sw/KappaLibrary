@@ -1,3 +1,0 @@
-    fn process(&mut self) -> Result<(), ()> {{
-        Ok(())
-    }}

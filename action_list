@@ -6,7 +6,15 @@
 Server:
 Parser -> Ast -> Coder -> Builder -> Executable
 
+K2/bin
+K2/lib
+K2/share
+K2/src
 
 
-
-use
+Creazione Library:
+- cargo new --lib nome_lib
+- aggiunger a dependecy:
+    - k2_stream = { path = "../K2Stream"}
+    - processor_macro = { path = "../macro/processor_macro"}
+    - memory_macro = { path = "../macro/memory_macro"}
