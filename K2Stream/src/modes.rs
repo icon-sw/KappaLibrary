@@ -77,10 +77,13 @@ impl Chain {
             }
             self.connections.check()?;
         }
-        for block_name in self.connections.get_nodes().rev() {
-            let block = self.blocks.get_mut(block_name).ok_or(())?;
+        let stream_processor_arc = StreamController::get_stream_by_id(self.get_stream_id())?;
+        let mut stream_processor = stream_processor_arc.lock().map_err(|_| ())?;
+        
+        for block_name in self.blocks.iter().rev() {
+            let block = stream_processor.get_processors_mut(block_name.clone())?;
             if block.initialize().is_err() {
-                return Err(())
+                return Err(());
             }
         }
         self.initialized = true;
@@ -90,9 +93,12 @@ impl Chain {
         if !self.initialized {
             return Err(());
         }
+        let stream_processor_arc = StreamController::get_stream_by_id(self.get_stream_id())?;
         *self.running.lock().unwrap() = true;
         while *self.running.lock().unwrap() {
-            for block in self.blocks.values_mut() {
+            for block_name in self.blocks.iter().rev() {
+                let mut stream_processor = stream_processor_arc.lock().map_err(|_| ())?;
+                let block = stream_processor.get_processors_mut(block_name.clone())?;
                 if block.process().is_err() {
                     *self.running.lock().unwrap() = false;
                     return Err(())
@@ -103,7 +109,10 @@ impl Chain {
     }
     pub fn finalize(&mut self) -> Result<(), ()> {
         *self.running.lock().unwrap() = false;
-        for block in self.blocks.values_mut() {
+        let stream_processor_arc = StreamController::get_stream_by_id(self.get_stream_id())?;
+        for block_name in self.blocks.iter().rev() {
+            let mut stream_processor = stream_processor_arc.lock().map_err(|_| ())?;
+            let block = stream_processor.get_processors_mut(block_name.clone())?;
             if block.finalize().is_err() {
                 return Err(())
             }

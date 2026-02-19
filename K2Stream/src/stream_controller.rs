@@ -202,7 +202,11 @@ impl StreamController {
         self.processors.insert( name, processor);
         Ok(())
     }
-    pub fn get_processors(&self, processors: Vec<String>) -> Result<Vec<Box<dyn ProcessorTrait>>, ()> {
+    pub fn get_processors(&self, processor_list: String) -> Result<&Box<dyn ProcessorTrait>, ()> {
+        self.processors.get(&processor_list).ok_or(())
+    }
+    pub fn get_processors_mut(&mut self, processor_list: String) -> Result<&mut Box<dyn ProcessorTrait>, ()> {
+        self.processors.get_mut(&processor_list).ok_or(())
     }
 }
 

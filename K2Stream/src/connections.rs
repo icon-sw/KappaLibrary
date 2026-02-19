@@ -77,8 +77,11 @@ impl ConnectionGraph {
     pub fn is_sorted(&self) -> bool {
         self.sorted
     }
-    pub fn get_nodes(&self) -> Iter<'_, String> {
+    pub fn get_nodes_iter(&self) -> Iter<'_, String> {
         self.nodes.iter()
+    }
+    pub fn get_nodes(&self) -> Vec<String> {
+        self.nodes.iter().cloned().collect()
     }
     pub fn add_connection(&mut self, from: String, to: String) {
         self.connections.push(Connection { from, to });
@@ -90,8 +93,8 @@ impl ConnectionGraph {
             for connection in self.connections.clone() {
                 let from = connection.from();
                 let to = connection.to();
-                let from_index = self.get_nodes().position(|item| item == &from.clone());
-                let to_index = self.get_nodes().position(|item| item == &to.clone());
+                let from_index = self.get_nodes_iter().position(|item| item == &from.clone());
+                let to_index = self.get_nodes_iter().position(|item| item == &to.clone());
                 if let Some(to_index) = to_index {
                     if let Some(from_index) = from_index {
                         if from_index > to_index {
@@ -117,8 +120,8 @@ impl ConnectionGraph {
         for connection in self.connections.clone() {
             let from = connection.from();
             let to = connection.to();
-            let from_index = self.get_nodes().position(|item| item == &from.clone());
-            let to_index = self.get_nodes().position(|item| item == &to.clone());
+            let from_index = self.get_nodes_iter().position(|item| item == &from.clone());
+            let to_index = self.get_nodes_iter().position(|item| item == &to.clone());
             if from_index > to_index {
                 return Err(());
             }
