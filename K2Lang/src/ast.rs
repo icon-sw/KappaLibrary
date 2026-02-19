@@ -185,7 +185,7 @@ impl AstProcessor {
                 processing_object.properties.insert("type".to_string(), processor_type.to_string());
                 processing_object.properties.insert("connection".to_string(), "0".to_string());
             }
-            "k2_parse_struct.tokens" => {
+            "command" => {
                 if !object_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
                     return Err("Invalid object name".to_string());
                 }
@@ -463,13 +463,13 @@ impl ProcessorTrait for AstProcessor {
         Ok(Box::new(ret))
     }
     fn initialize(&mut self ) -> Result<(), ()> {
-        self.stream_block.add_input::<K2ReturnStruct>("k2_parse_struct.tokens".to_string())?;
+        self.stream_block.add_input::<K2ReturnStruct>("command".to_string())?;
         self.stream_block.add_output::<K2ReturnStruct>("response".to_string())?;
         Ok(())
     }
     fn process(&mut self) -> Result<(), ()> {
         *self.state.lock().map_err(|_| ())? = StreamState::Running;
-        let command_input = self.stream_block.get_input::<K2ReturnStruct>(&"k2_parse_struct.tokens".to_string())?;
+        let command_input = self.stream_block.get_input::<K2ReturnStruct>(&"command".to_string())?;
         let k2_parse_struct = command_input.receive()?;
         let mut response = k2_parse_struct.clone();
         if k2_parse_struct.success {

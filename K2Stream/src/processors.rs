@@ -153,6 +153,18 @@ impl StreamBlock
     pub fn get_output<T: 'static + Send + Sync + Clone>(&self, name: &String) -> Result<&Output<T>, ()> {
         self.outputs.get(name).ok_or(())?.as_any().downcast_ref::<Output<T>>().ok_or(())
     }
+    pub fn get_parameter_mut<T: 'static + Send + Sync>(&mut self, name: &String) -> Result<&mut Parameter<T>, ()> {
+        self.memory.get_mut(name).ok_or(())?.as_any_mut().downcast_mut::<Parameter<T>>().ok_or(())
+    }
+    pub fn get_state_mut<T: 'static + Send + Sync>(&mut self, name: &String) -> Result<&mut State<T>, ()> {
+        self.memory.get_mut(name).ok_or(())?.as_any_mut().downcast_mut::<State<T>>().ok_or(())
+    }
+    pub fn get_input_mut<T: 'static + Send + Sync>(&mut self, name: &String) -> Result<&mut Input<T>, ()> {
+        self.inputs.get_mut(name).ok_or(())?.as_any_mut().downcast_mut::<Input<T>>().ok_or(())
+    }
+    pub fn get_output_mut<T: 'static + Send + Sync + Clone>(&mut self, name: &String) -> Result<&mut Output<T>, ()> {
+        self.outputs.get_mut(name).ok_or(())?.as_any_mut().downcast_mut::<Output<T>>().ok_or(())
+    }
     pub fn set_param<T: 'static>(&mut self, name: &String, value: T) -> Result<(), ()> 
     where T: 'static + Clone + Sync + Send + Float + PrimInt + Default {
         let param = self.memory.get_mut(name).ok_or(())?.as_any_mut().downcast_mut::<Parameter<T>>().ok_or(())?;

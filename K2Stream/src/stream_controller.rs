@@ -1,3 +1,4 @@
+use core::str;
 use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard, OnceLock}, thread::JoinHandle}; 
 
 use processor_macro::K2ProcessorBlock;
@@ -33,7 +34,7 @@ impl StreamController {
         modes.insert(0, mode);
 
         let mut self_instance = Self {
-            name,
+            name: name.clone(),
             stream_id: -1 as isize,
             header: ProcessorHeader {
                 proc_name: "StreamController".to_string(),
@@ -55,14 +56,24 @@ impl StreamController {
         };
         self_instance.stream_block.add_input::<String>("command".to_string())?;
         self_instance.stream_block.add_output::<Result<(), ()>>("response".to_string())?;
-        let mut stream_table = STREAM_TABLE.get_or_init(|| Mutex::new(Vec::new())).lock().map_err(|_| ())?;
-        let mut stream_id_counter = STREAM_ID_COUNTER.get_or_init(|| Mutex::new(0)).lock().map_err(|_| ())?;
-        *stream_id_counter += 1;
-        self_instance.stream_id = *stream_id_counter;
-        self_instance.stream_block.set_stream_id(*stream_id_counter);
+        dbg!("Creating stream controller with name: {}", name.clone());
+        let stream_id: isize;
+        {
+            let mut stream_id_counter = STREAM_ID_COUNTER.get_or_init(|| Mutex::new(0)).lock().map_err(|_| ())?;
+            *stream_id_counter += 1;
+            dbg!(*stream_id_counter);
+            stream_id = *stream_id_counter;
+        }
+        self_instance.stream_id = stream_id;
+        dbg!("Set stream id: {}", stream_id);
+        self_instance.stream_block.set_stream_id(stream_id);
+        dbg!("Registering commands...");
         self_instance.register_commands()?;
+        dbg!("Registering stream controller in table...");
+        let mut stream_table = STREAM_TABLE.get_or_init(|| Mutex::new(Vec::new())).lock().map_err(|_| ())?;
         stream_table.push(Arc::new(Mutex::new(self_instance)));
-        Ok(*stream_id_counter)
+        dbg!("Stream controller created with id: {}", stream_id);
+        Ok(stream_id)
     }
     pub fn get_stream_by_id(id: isize) -> Result<Arc<Mutex<Self>>, ()> {
         let stream_table = STREAM_TABLE.get_or_init(|| Mutex::new(Vec::new())).lock().map_err(|_| ())?;
