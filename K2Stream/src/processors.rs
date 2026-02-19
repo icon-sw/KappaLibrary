@@ -5,12 +5,13 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::connections::{Input, Output};
+use crate::errors::{K2Error, K2ErrorCode};
 use crate::memory::{DataHeader, DataTrait, Memory, MemoryTrait};
 use crate::parameter::{Parameter, ParameterType, ParameterValueType};
 use crate::states::State;
 use crate::stream_controller::{Callback, StreamController};
 
-pub type ProcessorNewReturn = Result<Box<dyn ProcessorTrait>, ()>;
+pub type ProcessorNewReturn = Result<Box<dyn ProcessorTrait>, K2Error>;
 
 #[derive(PartialEq, Clone)]
 pub enum StreamType {
@@ -59,27 +60,27 @@ impl StreamBlock
     pub fn set_task_id(&mut self, task_id: isize) {
         self.task_id.push(task_id);
     }
-    pub fn add_input<T: 'static>(&mut self, name: String) -> Result<(), ()>
+    pub fn add_input<T: 'static>(&mut self, name: String) -> Result<(), K2Error>
     where Input<T> : MemoryTrait,
           T: 'static + Send + Sync {
         if !self.inputs.contains_key(&name) {
             self.inputs.insert(name.clone(), Box::new(Input::<T>::new(name)));
             Ok(())
         } else {
-            Err(())
+            Err(K2Error { code: K2ErrorCode::AlreadyExists, message: "Input already exists".into() })
         }
     }
-    pub fn add_output<T: 'static + Clone>(&mut self, name: String) -> Result<(), ()>
+    pub fn add_output<T: 'static + Clone>(&mut self, name: String) -> Result<(), K2Error>
     where Output<T> : MemoryTrait,
           T: 'static + Send + Sync + Clone {
         if !self.outputs.contains_key(&name) {
             self.outputs.insert(name.clone(), Box::new(Output::<T>::new(name)));
             Ok(())
         } else {
-            Err(())
+            Err(K2Error { code: K2ErrorCode::AlreadyExists, message: "Output already exists".into() })
         }
     }
-    pub fn add_parameter<T: 'static>(&mut self, kind: ParameterValueType, name: String, parameter: ParameterType) -> Result<(), ()>
+    pub fn add_parameter<T: 'static>(&mut self, kind: ParameterValueType, name: String, parameter: ParameterType) -> Result<(), K2Error>
     where   T: 'static + Clone + Sync + Send + Float + PrimInt + Default,
             Result<Parameter<T>, ()>: DataTrait 
     {
@@ -105,9 +106,9 @@ impl StreamBlock
             }
         }
     }
-    pub fn add_state<T>(&mut self, name: String) -> Result<(), ()>
+    pub fn add_state<T>(&mut self, name: String) -> Result<(), K2Error>
     where T: 'static + Clone + Sync + Send + Default,
-    Result<State<T>, ()>: DataTrait 
+    Result<State<T>, K2Error>: DataTrait 
     {
         self.memory.insert(
             name.clone(), 
@@ -116,8 +117,8 @@ impl StreamBlock
                     name,
         )))
     }
-    pub fn add_command(&mut self, command: String, callback: Callback) -> Result<(), ()> {
-        let name = command.clone().split(".").next().ok_or(())?.to_string();
+    pub fn add_command(&mut self, command: String, callback: Callback) -> Result<(), K2Error> {
+        let name = command.clone().split(".").next().ok_or(K2Error { code: K2ErrorCode::InvalidValue, message: "Invalid command format".into() })?.to_string();
         StreamController::add_command(self.stream_id, command, name, callback)
      }
     pub fn is_initialized(&mut self) -> bool {
@@ -126,12 +127,12 @@ impl StreamBlock
         }
         self.initialized
     }
-    pub fn initialize(&mut self) -> Result<(), ()> {
+    pub fn initialize(&mut self) -> Result<(), K2Error> {
         if self.stream_id == -1 {
-            return Err(());
+            return Err(K2Error { code: K2ErrorCode::Uninitialized, message: "Stream ID is not set".into() });
         }
         if self.task_id.is_empty() {
-            return Err(());
+            return Err(K2Error { code: K2ErrorCode::Uninitialized, message: "Task ID is not set".into() });
         }
         for data in self.memory.values_mut() {
             if !data.is_setted() {
@@ -141,54 +142,54 @@ impl StreamBlock
         self.initialized = true;
         Ok(())
     }
-    pub fn get_parameter<T: 'static + Send + Sync>(&self, name: &String) -> Result<&Parameter<T>, ()> {
-        self.memory.get(name).ok_or(())?.as_any().downcast_ref::<Parameter<T>>().ok_or(())
+    pub fn get_parameter<T: 'static + Send + Sync>(&self, name: &String) -> Result<&Parameter<T>, K2Error> {
+        self.memory.get(name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Parameter not found".into() })?.as_any().downcast_ref::<Parameter<T>>().ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Failed to downcast parameter".into() })
     }
-    pub fn get_state<T: 'static + Send + Sync>(&self, name: &String) -> Result<&State<T>, ()> {
-        self.memory.get(name).ok_or(())?.as_any().downcast_ref::<State<T>>().ok_or(())
+    pub fn get_state<T: 'static + Send + Sync>(&self, name: &String) -> Result<&State<T>, K2Error> {
+        self.memory.get(name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "State not found".into() })?.as_any().downcast_ref::<State<T>>().ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Failed to downcast state".into() })
     }
-    pub fn get_input<T: 'static + Send + Sync>(&self, name: &String) -> Result<&Input<T>, ()> {
-        self.inputs.get(name).ok_or(())?.as_any().downcast_ref::<Input<T>>().ok_or(())
+    pub fn get_input<T: 'static + Send + Sync>(&self, name: &String) -> Result<&Input<T>, K2Error> {
+        self.inputs.get(name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Input not found".into() })?.as_any().downcast_ref::<Input<T>>().ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Failed to downcast input".into() })
     }
-    pub fn get_output<T: 'static + Send + Sync + Clone>(&self, name: &String) -> Result<&Output<T>, ()> {
-        self.outputs.get(name).ok_or(())?.as_any().downcast_ref::<Output<T>>().ok_or(())
+    pub fn get_output<T: 'static + Send + Sync + Clone>(&self, name: &String) -> Result<&Output<T>, K2Error> {
+        self.outputs.get(name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Output not found".into() })?.as_any().downcast_ref::<Output<T>>().ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Failed to downcast output".into() })
     }
-    pub fn get_parameter_mut<T: 'static + Send + Sync>(&mut self, name: &String) -> Result<&mut Parameter<T>, ()> {
-        self.memory.get_mut(name).ok_or(())?.as_any_mut().downcast_mut::<Parameter<T>>().ok_or(())
+    pub fn get_parameter_mut<T: 'static + Send + Sync>(&mut self, name: &String) -> Result<&mut Parameter<T>, K2Error> {
+        self.memory.get_mut(name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Parameter not found".into() })?.as_any_mut().downcast_mut::<Parameter<T>>().ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Failed to downcast parameter".into() })
     }
-    pub fn get_state_mut<T: 'static + Send + Sync>(&mut self, name: &String) -> Result<&mut State<T>, ()> {
-        self.memory.get_mut(name).ok_or(())?.as_any_mut().downcast_mut::<State<T>>().ok_or(())
+    pub fn get_state_mut<T: 'static + Send + Sync>(&mut self, name: &String) -> Result<&mut State<T>, K2Error> {
+        self.memory.get_mut(name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "State not found".into() })?.as_any_mut().downcast_mut::<State<T>>().ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Failed to downcast state".into() })
     }
-    pub fn get_input_mut<T: 'static + Send + Sync>(&mut self, name: &String) -> Result<&mut Input<T>, ()> {
-        self.inputs.get_mut(name).ok_or(())?.as_any_mut().downcast_mut::<Input<T>>().ok_or(())
+    pub fn get_input_mut<T: 'static + Send + Sync>(&mut self, name: &String) -> Result<&mut Input<T>, K2Error> {
+        self.inputs.get_mut(name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Input not found".into() })?.as_any_mut().downcast_mut::<Input<T>>().ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Failed to downcast input".into() })
     }
-    pub fn get_output_mut<T: 'static + Send + Sync + Clone>(&mut self, name: &String) -> Result<&mut Output<T>, ()> {
-        self.outputs.get_mut(name).ok_or(())?.as_any_mut().downcast_mut::<Output<T>>().ok_or(())
+    pub fn get_output_mut<T: 'static + Send + Sync + Clone>(&mut self, name: &String) -> Result<&mut Output<T>, K2Error> {
+        self.outputs.get_mut(name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Output not found".into() })?.as_any_mut().downcast_mut::<Output<T>>().ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Failed to downcast output".into() })
     }
-    pub fn set_param<T: 'static>(&mut self, name: &String, value: T) -> Result<(), ()> 
+    pub fn set_param<T: 'static>(&mut self, name: &String, value: T) -> Result<(), K2Error> 
     where T: 'static + Clone + Sync + Send + Float + PrimInt + Default {
-        let param = self.memory.get_mut(name).ok_or(())?.as_any_mut().downcast_mut::<Parameter<T>>().ok_or(())?;
+        let param = self.memory.get_mut(name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Parameter not found".into() })?.as_any_mut().downcast_mut::<Parameter<T>>().ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Failed to downcast parameter".into() })?;
         param.set(value)
     }
-    pub fn set_state<T: 'static>(&mut self, name: &String, value: T) -> Result<(), ()> 
+    pub fn set_state<T: 'static>(&mut self, name: &String, value: T) -> Result<(), K2Error> 
     where T: 'static + Clone + Sync + Send + Default {
-        let state = self.memory.get_mut(name).ok_or(())?.as_any_mut().downcast_mut::<State<T>>().ok_or(())?;
+        let state = self.memory.get_mut(name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "State not found".into() })?.as_any_mut().downcast_mut::<State<T>>().ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Failed to downcast state".into() })?;
         state.set(value)
     }
-    pub fn connect<T: 'static + Send + Sync + Clone>(&mut self, output_name: &String, input_name: &String, other_block: &StreamBlock) -> Result<(), ()> {
-        let output = self.outputs.get_mut(output_name).ok_or(())?;
-        let output = output.as_any_mut().downcast_mut::<Output<T>>().ok_or(())?;
-        let input = other_block.inputs.get(input_name).ok_or(())?;
-        let input = input.as_any().downcast_ref::<Input<T>>().ok_or(())?;
+    pub fn connect<T: 'static + Send + Sync + Clone>(&mut self, output_name: &String, input_name: &String, other_block: &StreamBlock) -> Result<(), K2Error> {
+        let output = self.outputs.get_mut(output_name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Output not found".into() })?;
+        let output = output.as_any_mut().downcast_mut::<Output<T>>().ok_or(K2Error { code: K2ErrorCode::BadFormat, message: "Output type mismatch".into() })?;
+        let input = other_block.inputs.get(input_name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Input not found".into() })?;
+        let input = input.as_any().downcast_ref::<Input<T>>().ok_or(K2Error { code: K2ErrorCode::BadFormat, message: "Input type mismatch".into() })?;
         output.connect(input.get_sender());
         Ok(())
     }
-    pub fn receive_input<T: 'static + Send + Sync>(&self, name: &String) -> Result<T, ()> {
-        let input = self.inputs.get(name).ok_or(())?.as_any().downcast_ref::<Input<T>>().ok_or(())?;
+    pub fn receive_input<T: 'static + Send + Sync>(&self, name: &String) -> Result<T, K2Error> {
+        let input = self.inputs.get(name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Input not found".into() })?.as_any().downcast_ref::<Input<T>>().ok_or(K2Error { code: K2ErrorCode::BadFormat, message: "Input type mismatch".into() })?;
         input.receive()
     }
-    pub fn send_output<T: 'static + Send + Sync + Clone>(&self, name: &String, data: T) -> Result<(), ()> {
-        let output = self.outputs.get(name).ok_or(())?.as_any().downcast_ref::<Output<T>>().ok_or(())?;
+    pub fn send_output<T: 'static + Send + Sync + Clone>(&self, name: &String, data: T) -> Result<(), K2Error> {
+        let output = self.outputs.get(name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Output not found".into() })?.as_any().downcast_ref::<Output<T>>().ok_or(K2Error { code: K2ErrorCode::BadFormat, message: "Output type mismatch".into() })?;
         output.send(data)
     }
     pub fn get_processor_type(&self) -> StreamType {
@@ -212,16 +213,16 @@ pub trait ProcessorBlockTrait: MemoryTrait + Send + Sync {
     fn name(&self) -> &DataHeader;
     fn proc_name(&self) -> &String;
     fn header(&self) -> &ProcessorHeader;
-    fn lock() -> Result<MutexGuard<'static, Self>, ()> where Self: Sized;
-    fn get_proc_state(&self) -> Result<StreamState, ()>;
+    fn lock() -> Result<MutexGuard<'static, Self>, K2Error> where Self: Sized;
+    fn get_proc_state(&self) -> Result<StreamState, K2Error>;
     fn get_stream_block(&self) -> &StreamBlock;
     fn get_stream_block_mut(&mut self) -> &mut StreamBlock;
 }
 pub trait ProcessorTrait: ProcessorBlockTrait + Send + Sync + Any {
     fn new(name: String) -> ProcessorNewReturn where Self: Sized;
-    fn initialize(&mut self ) -> Result<(), ()>;
-    fn process(&mut self) -> Result<(), ()>;
-    fn finalize(&mut self) -> Result<(), ()>;
+    fn initialize(&mut self ) -> Result<(),K2Error>;
+    fn process(&mut self) -> Result<(), K2Error>;
+    fn finalize(&mut self) -> Result<(), K2Error>;
     fn get_processor_type(&self) -> StreamType {
         self.get_stream_block().get_processor_type()
     }

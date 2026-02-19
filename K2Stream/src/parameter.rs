@@ -3,7 +3,7 @@ use std::fmt;
 use memory_macro::K2Memory;
 use num_traits::{Float, PrimInt};
 
-use crate::memory::{DataHeader, DataTrait, MemoryTrait};
+use crate::{errors::{K2Error, K2ErrorCode}, memory::{DataHeader, DataTrait, MemoryTrait}};
 
 pub enum ParameterRangeType {
     Range,
@@ -104,21 +104,21 @@ impl<T: 'static + Clone + PartialOrd + Send + Sync> Parameter<T> {
         }
         Ok(())
     }
-    pub fn set(&mut self, value: T) -> Result<(), ()> {
+    pub fn set(&mut self, value: T) -> Result<(), K2Error> {
         if self.param_type == ParameterType::STATIC && self.setted {
-            return Err(())
+            return Err(K2Error { code: K2ErrorCode::InvalidOperation, message: "Cannot set static parameter".into() })
         }
         if value >= self.min_value && value <= self.max_value {
             if self.values.len() > 0 {
                 if !self.values.contains(&value) {
-                    return Err(())
+                    return Err(K2Error { code: K2ErrorCode::OutOfRange, message: "Value is not in range".into() })
                 }
             }
             self.value = value;
             self.setted = true;
             Ok(())
         } else {
-            Err(())
+            Err(K2Error { code: K2ErrorCode::OutOfRange, message: "Value is out of range".into() })
         }
     }
     pub fn get(&self) -> &T {

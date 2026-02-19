@@ -1,5 +1,7 @@
 use std::{any::Any, collections::HashMap};
 
+use crate::errors::{K2Error, K2ErrorCode};
+
 pub type DataHeader = String;
 
 pub trait MemoryTrait : Send + Sync {
@@ -23,26 +25,26 @@ impl Memory {
             data: HashMap::new(),
         }
     }
-    pub fn insert(&mut self, header: DataHeader, data: Box<dyn DataTrait>) -> Result<(), ()> {
+    pub fn insert(&mut self, header: DataHeader, data: Box<dyn DataTrait>) -> Result<(), K2Error> {
         if self.data.contains_key(&header) {
-            return Err(())
+            return Err(K2Error { code: K2ErrorCode::AlreadyExists, message: "Data with this header already exists".into() });
         }
         self.data.insert(header, data);
         Ok(())
     }
-    pub fn update(&mut self, header: DataHeader, data: Box<dyn DataTrait>) -> Result<(), ()> {
+    pub fn update(&mut self, header: DataHeader, data: Box<dyn DataTrait>) -> Result<(), K2Error> {
         if self.data.contains_key(&header) {
             self.data.insert(header, data);
             Ok(())
         } else {
-            Err(())
+            Err(K2Error { code: K2ErrorCode::NotFound, message: "Data with this header does not exist".into() })
         }
     }
-    pub fn remove(&mut self, header: &DataHeader) -> Result<(), ()> {
+    pub fn remove(&mut self, header: &DataHeader) -> Result<(), K2Error> {
         if self.data.remove(header).is_some() {
             Ok(())
         } else {
-            Err(())
+            Err(K2Error { code: K2ErrorCode::NotFound, message: "Data with this header does not exist".into() })
         }
     }
     pub fn get(&self, header: &DataHeader) -> Option<&Box<dyn DataTrait>> {

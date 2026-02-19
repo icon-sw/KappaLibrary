@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt, sync::{Arc, Mutex, MutexGuard}};
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
 
-use k2_stream::{memory::{DataHeader, MemoryTrait}, parameter::ParameterValueType, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
+use k2_stream::{errors::{K2Error, K2ErrorCode}, memory::{DataHeader, MemoryTrait}, parameter::ParameterValueType, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
 
 use crate::K2ReturnStruct;
 
@@ -24,28 +24,28 @@ pub enum ProcessorCodePart {
 }
 
 impl TryFrom<u8> for ProcessorCodePart {
-    type Error = ();
+    type Error = K2Error;
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            // 0 => Ok(ProcessorCodePart::K2Import), Make not writable from user
-            1 => Ok(ProcessorCodePart::UserImport),
-            2 => Ok(ProcessorCodePart::UserStruct),
-            // 3 => Ok(ProcessorCodePart::K2InitCode), Make not writable from user
-            4 => Ok(ProcessorCodePart::UserInitCode),
-            // 5 => Ok(ProcessorCodePart::K2MemberCreation), Make not writable from user
-            6 => Ok(ProcessorCodePart::UserMemberCreation),
-            7 => Ok(ProcessorCodePart::InitializeCode),
-            8 => Ok(ProcessorCodePart::ProcessCode),
-            9 => Ok(ProcessorCodePart::FinalizeCode),
+            0  => Err(K2Error { code: K2ErrorCode::NotAllowed, message: format!("Read-only code part value: {}", value) }),
+            1  => Ok(ProcessorCodePart::UserImport),
+            2  => Ok(ProcessorCodePart::UserStruct),
+            3  => Err(K2Error { code: K2ErrorCode::NotAllowed, message: format!("Read-only code part value: {}", value) }),
+            4  => Ok(ProcessorCodePart::UserInitCode),
+            5  => Err(K2Error { code: K2ErrorCode::NotAllowed, message: format!("Read-only code part value: {}", value) }),
+            6  => Ok(ProcessorCodePart::UserMemberCreation),
+            7  => Ok(ProcessorCodePart::InitializeCode),
+            8  => Ok(ProcessorCodePart::ProcessCode),
+            9  => Ok(ProcessorCodePart::FinalizeCode),
             10 => Ok(ProcessorCodePart::UserCode),
-            _ => Err(()),
+            _  => Err(K2Error { code: K2ErrorCode::InvalidValue, message: format!("Unknown code part value: {}", value) }),
         }
     }
 }
 
 impl TryFrom<String> for ProcessorCodePart {
-    type Error = ();
-    fn try_from(value: String) -> Result<Self, Self::Error> {
+    type Error = K2Error;
+    fn try_from(value: String) -> Result<Self, K2Error> {
         match value.as_str() {
             "k2_import" => Ok(ProcessorCodePart::K2Import),
             "user_import" => Ok(ProcessorCodePart::UserImport),
@@ -58,7 +58,7 @@ impl TryFrom<String> for ProcessorCodePart {
             "process_code" => Ok(ProcessorCodePart::ProcessCode),
             "finalize_code" => Ok(ProcessorCodePart::FinalizeCode),
             "user_code" => Ok(ProcessorCodePart::UserCode),
-            _ => Err(()),
+            _ => Err(K2Error { code: K2ErrorCode::InvalidValue, message: format!("Unknown code part: {}", value) }),
         }
     }
 }

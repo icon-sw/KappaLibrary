@@ -1,7 +1,7 @@
 use std::{collections::{VecDeque, vec_deque::Iter}, sync::{Arc, Mutex, mpsc::{Receiver, SyncSender}}};
 use memory_macro::K2Memory;
 
-use crate::memory::{DataHeader, MemoryTrait};
+use crate::{errors::{K2Error, K2ErrorCode}, memory::{DataHeader, MemoryTrait}};
 
 #[derive(K2Memory)]
 pub struct Input<T: 'static + Send + Sync> {
@@ -21,8 +21,8 @@ impl<T: 'static + Send + Sync> Input<T> {
     pub fn get_sender(&self) -> SyncSender<T> {
         self.sender.clone()
     }
-    pub fn receive(&self) -> Result<T, ()> {
-        self.receiver.lock().map_err(|_| ())?.recv().map_err(|_| ())
+    pub fn receive(&self) -> Result<T, K2Error> {
+        self.receiver.lock().map_err(|_| K2Error { code: K2ErrorCode::LockError, message: "Failed to lock receiver".into() })?.recv().map_err(|_| K2Error { code: K2ErrorCode::NotFound, message: "Failed to receive data".into() })
     }
 }
 #[derive(K2Memory)]
@@ -41,9 +41,9 @@ impl<T: 'static + Send + Sync + Clone> Output<T> {
     pub fn get_header(&self) -> &DataHeader {
         &self.name
     }
-    pub fn send(&self, data: T) -> Result<(), ()> {
+    pub fn send(&self, data: T) -> Result<(), K2Error> {
         for sender in &self.sender {
-            sender.send(data.clone()).map_err(|_| ())?;
+            sender.send(data.clone()).map_err(|_| K2Error { code: K2ErrorCode::NotFound, message: "Failed to send data".into() })?;
         }
         Ok(())
     }
@@ -113,7 +113,7 @@ impl ConnectionGraph {
             }
         }
     }
-    pub fn check(&mut self) -> Result<(),()> {
+    pub fn check(&mut self) -> Result<(),K2Error> {
         if !self.is_sorted() {
             self.sort();
         }
@@ -123,7 +123,7 @@ impl ConnectionGraph {
             let from_index = self.get_nodes_iter().position(|item| item == &from.clone());
             let to_index = self.get_nodes_iter().position(|item| item == &to.clone());
             if from_index > to_index {
-                return Err(());
+                return Err(K2Error { code: K2ErrorCode::BadFormat, message: format!("Invalid connection from {} to {}", from, to) });
             }
         }
         Ok(())

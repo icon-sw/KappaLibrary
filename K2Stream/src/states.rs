@@ -1,6 +1,6 @@
 use memory_macro::K2Memory;
 
-use crate::memory::{DataHeader, DataTrait, MemoryTrait};
+use crate::{errors::K2Error, memory::{DataHeader, DataTrait, MemoryTrait}};
 
 #[derive(Clone, K2Memory)]
 pub struct State<T: 'static + Sync + Send> {
@@ -11,7 +11,7 @@ pub struct State<T: 'static + Sync + Send> {
 }
 
 impl<T: 'static + Clone + Sync + Send + Default> State<T> {
-    pub fn new(name: DataHeader) -> Result<Self, ()> {
+    pub fn new(name: DataHeader) -> Result<Self, K2Error> {
         let param = Self {
             name: name.clone(),
             value: T::default(),
@@ -20,7 +20,7 @@ impl<T: 'static + Clone + Sync + Send + Default> State<T> {
         };
         Ok(param)
     }
-    pub fn set(&mut self, value: T) -> Result<(), ()> {
+    pub fn set(&mut self, value: T) -> Result<(), K2Error> {
         self.value = value;
         Ok(())
     }
@@ -30,7 +30,7 @@ impl<T: 'static + Clone + Sync + Send + Default> State<T> {
     pub fn get_mut(&mut self) -> &mut T {
         &mut self.value
     }
-    pub fn initialize(&mut self, value: T) -> Result<(), ()> {
+    pub fn initialize(&mut self, value: T) -> Result<(), K2Error> {
         self.value = value.clone();
         self.init = value;
         self.initialized = true;

@@ -1,25 +1,26 @@
-pub enum ProcessorError {
-    Ok,
-    RangeValueError,
-    VariableAlreadyExists,
-    VariableNotFound,
-    MemoryAlreadyExists,
-    MemoryNotFound,
-    ReceivingError,
-    SendingError,
+#[derive(Debug, Clone)]
+pub enum K2ErrorCode {
+    NotAllowed,
+    NotFound,
+    ErrorRange,
+    AlreadyExists,
+    InvalidValue,
+    BadFormat,
+    Uninitialized,
     LockError,
+    ProcessError,
+    OutOfRange,
+    InvalidOperation,
 }
 
-pub fn processor_error_to_str(err: &ProcessorError) -> &str {
-    match err {
-        ProcessorError::Ok => "No error",
-        ProcessorError::RangeValueError => "Value out of range",
-        ProcessorError::VariableAlreadyExists => "Variable already exists",
-        ProcessorError::VariableNotFound => "Variable not found",
-        ProcessorError::MemoryAlreadyExists => "Memory already exists",
-        ProcessorError::MemoryNotFound => "Memory not found",
-        ProcessorError::ReceivingError => "Error receiving data",
-        ProcessorError::SendingError => "Error sending data",
-        ProcessorError::LockError => "Error locking resource",
+#[derive(Debug, Clone)]
+pub struct K2Error {
+    pub code: K2ErrorCode,
+    pub message: String,
+}
+
+impl From<()> for K2Error {
+    fn from(_) -> Self {
+        K2Error { code: K2ErrorCode::ErrorRange, message: "IO Error".into() }
     }
 }

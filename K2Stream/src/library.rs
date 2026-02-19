@@ -3,7 +3,7 @@ use std::{collections::HashMap, ffi::{CStr, c_char, c_void}, ptr};
 use libloading::{Library, Symbol};
 use serde::{Deserialize, Serialize};
 
-use crate::processors::ProcessorTrait;
+use crate::{errors::{K2Error, K2ErrorCode}, processors::ProcessorTrait};
 
 pub type ProcessorNew = fn(name: String) -> Result<Box<dyn ProcessorTrait>, ()>;
 
@@ -114,24 +114,24 @@ impl LibraryHandler {
         }
     }
 
-    pub fn load_library(&mut self, path: &str) -> Result<LibraryStruct, ()> {
+    pub fn load_library(&mut self, path: &str) -> Result<LibraryStruct, K2Error> {
         // Qui dovresti implementare la logica per caricare la libreria dinamica
         // e ottenere la struttura LibraryStructFFI, poi convertirla in LibraryStruct
-        let library: Library = unsafe { libloading::Library::new(path).map_err(|_| ())? };
+        let library: Library = unsafe { libloading::Library::new(path).map_err(|_| K2Error { code: K2ErrorCode::NotFound, message: "Failed to load library".into() })? };
 
         let module_info: Symbol<*mut LibraryStructFFI>;
         match unsafe { library.get(b"MODULE\0") } {
             Ok(module) => {module_info = module;}
             Err(_) => {
                 eprintln!("Unable to find");
-                return Err(());
+                return Err(K2Error { code: K2ErrorCode::NotFound, message: "Failed to find module in library".into() });
             }
         }
         let ptr = *module_info;
 
         let module: LibraryStruct = unsafe {
             if ptr.is_null() {
-                return Err(());
+                return Err(K2Error { code: K2ErrorCode::NotFound, message: "Module pointer is null".into() });
             }
             let ffi_data: LibraryStructFFI = ptr::read(ptr);
             LibraryStruct::from_ffi(ffi_data)

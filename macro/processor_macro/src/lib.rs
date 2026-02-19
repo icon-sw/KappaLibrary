@@ -13,9 +13,9 @@ pub fn processor_macro_derive(input: TokenStream) -> TokenStream {
             fn name(&self) -> &DataHeader { &self.name}
             fn proc_name(&self) -> &String { &self.header().proc_name }
             fn header(&self) -> &ProcessorHeader { &self.header }
-            fn lock() -> Result<MutexGuard<'static, Self>, ()> where Self: Sized {Err(())}
-            fn get_proc_state(&self) -> Result<StreamState, ()> {
-                let state = self.state.lock().map_err(|_| ())?;
+            fn lock() -> Result<MutexGuard<'static, Self>, K2Error> where Self: Sized {Err(K2Error { code: K2ErrorCode::LockError, message: "Failed to lock processor block".into()})}
+            fn get_proc_state(&self) -> Result<StreamState, K2Error> {
+                let state = self.state.lock().map_err(|_| K2Error { code: K2ErrorCode::LockError, message: "Failed to lock processor state".into()})?;
                 Ok((*state).clone())
             }
             fn get_stream_block(&self) -> &StreamBlock {
