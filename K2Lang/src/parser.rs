@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard}};
 
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
-use k2_stream::{memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
+use k2_stream::{k2err, errors::{K2Error, K2ErrorCode}, memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
 use crate::{K2ReturnStruct, Token};
 
 type ParserReturn = Result<Token, String>;
@@ -241,13 +241,13 @@ impl ProcessorTrait for Parser {
         self_instance.stream_block.add_output::<K2ReturnStruct>("response".to_string())?;
         Ok(Box::new(self_instance))
     }
-    fn initialize(&mut self) -> Result<(), ()> {
-        let mut state = self.state.lock().map_err(|_| ())?;
+    fn initialize(&mut self) -> Result<(), K2Error> {
+        let mut state = self.state.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Unable to set state"))?;
         *state = StreamState::Initialized;
         Ok(())
     }
-    fn process(&mut self) -> Result<(), ()> {
-        *self.state.lock().map_err(|_| ())? = StreamState::Running;
+    fn process(&mut self) -> Result<(), K2Error> {
+        *self.state.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Unable to set state"))? = StreamState::Running;
         let command_input = self.stream_block.get_input::<String>(&"command".to_string())?;
         let command_str = command_input.receive()?;
         let tokenized_commands = self.split_commands(&command_str);
@@ -262,8 +262,8 @@ impl ProcessorTrait for Parser {
         
         Ok(())
     }
-    fn finalize(&mut self) -> Result<(), ()> {
-        let mut state = self.state.lock().map_err(|_| ())?;
+    fn finalize(&mut self) -> Result<(), K2Error> {
+        let mut state = self.state.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Unable to set state"))?;
         *state = StreamState::Waiting;
         Ok(())
     }

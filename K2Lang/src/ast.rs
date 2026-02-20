@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard}};
 
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
-use k2_stream::{memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
+use k2_stream::{errors::{K2Error, K2ErrorCode}, k2err, memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
 use crate::{K2Object, K2ReturnStruct, coder::ProcessorCodePart};
 
 type AstReturn = Result<K2ReturnStruct, String>;
@@ -462,13 +462,13 @@ impl ProcessorTrait for AstProcessor {
         };
         Ok(Box::new(ret))
     }
-    fn initialize(&mut self ) -> Result<(), ()> {
+    fn initialize(&mut self ) -> Result<(), K2Error> {
         self.stream_block.add_input::<K2ReturnStruct>("command".to_string())?;
         self.stream_block.add_output::<K2ReturnStruct>("response".to_string())?;
         Ok(())
     }
-    fn process(&mut self) -> Result<(), ()> {
-        *self.state.lock().map_err(|_| ())? = StreamState::Running;
+    fn process(&mut self) -> Result<(), K2Error> {
+        *self.state.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Unable to update status"))? = StreamState::Running;
         let command_input = self.stream_block.get_input::<K2ReturnStruct>(&"command".to_string())?;
         let k2_parse_struct = command_input.receive()?;
         let mut response = k2_parse_struct.clone();
@@ -480,8 +480,10 @@ impl ProcessorTrait for AstProcessor {
         response_output.send(response)?;
         Ok(())
     }
-    fn finalize(&mut self) -> Result<(), ()> {
-        *self.state.lock().map_err(|_| ())? = StreamState::Waiting;
+    fn finalize(&mut self) -> Result<(), K2Error> {
+        *self.state.lock()
+            .map_err(|_| k2err!(K2ErrorCode::LockError, "Unable to update status"))? 
+                = StreamState::Waiting;
         Ok(())
     }
 }

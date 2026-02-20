@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt, sync::{Arc, Mutex, MutexGuard}};
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
 
-use k2_stream::{errors::{K2Error, K2ErrorCode}, memory::{DataHeader, MemoryTrait}, parameter::ParameterValueType, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
+use k2_stream::{errors::{K2Error, K2ErrorCode}, k2err, memory::{DataHeader, MemoryTrait}, parameter::ParameterValueType, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
 
 use crate::K2ReturnStruct;
 
@@ -405,10 +405,10 @@ impl ProcessorTrait for Coder {
         coder.stream_block.add_output::<K2ReturnStruct>("response".to_string())?;
         Ok(Box::new(coder))
     }
-    fn initialize(&mut self ) -> Result<(), ()> {
+    fn initialize(&mut self ) -> Result<(), K2Error> {
         Ok(())
     }
-    fn process(&mut self) -> Result<(), ()> {
+    fn process(&mut self) -> Result<(), K2Error> {
         let command_input = self.stream_block.get_input::<K2ReturnStruct>(&"command".to_string())?;
         let command = command_input.receive()?;
         let mut response = command.clone();
@@ -419,8 +419,8 @@ impl ProcessorTrait for Coder {
         response_output.send(response)?;
         Ok(())
     }
-    fn finalize(&mut self) -> Result<(), ()> {
-        *self.state.lock().map_err(|_| ())? = StreamState::Waiting;
+    fn finalize(&mut self) -> Result<(), K2Error> {
+        *self.state.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Unable to update status"))? = StreamState::Waiting;
         Ok(())
     }
 }
