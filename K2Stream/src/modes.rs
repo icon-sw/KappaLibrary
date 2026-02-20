@@ -1,9 +1,19 @@
 use std::{collections::HashMap, sync::{Arc, Mutex, OnceLock}, thread::JoinHandle};
 
-use crate::{connections::ConnectionGraph, errors::{K2Error, K2ErrorCode}, processors::{ProcessorTrait, StreamType}, stream_controller::StreamController};
+use crate::{connections::ConnectionGraph, errors::{K2Error, K2ErrorCode}, k2err, processors::{StreamBlock, StreamType}, stream_controller::StreamController};
 
 static TASK_ID_COUNTER: OnceLock<Mutex<isize>> = OnceLock::new();
 
+pub type ChainType = Arc<Mutex<Chain>>;
+
+pub struct ChainBuilder {}
+
+impl ChainBuilder {
+    pub fn create(name: String) -> Result<ChainType, K2Error>{
+        let chain = Chain::new(name);
+        Ok(Arc::new(Mutex::new(chain)))
+    }
+}
 #[derive(Clone)]
 pub struct Connection {
     from: String,
@@ -52,20 +62,13 @@ impl Chain {
         self.stream_id = stream_id;
     }
     pub fn 
-    add_block(&mut self, mut block: Box<dyn ProcessorTrait>) -> Result<(),K2Error> {
+    add_block(&mut self, block_name: String, block: &StreamBlock) -> Result<(),K2Error> {
         if block.get_processor_type() == StreamType::RECEIVER {
             if self.input_present {
                 return Err(K2Error { code: K2ErrorCode::AlreadyExists, message: "Input block already exists".into() });
             }
             self.input_present = true;
         }
-        block.get_stream_block_mut().set_task_id(self.task_id);
-        block.get_stream_block_mut().set_stream_id(self.stream_id);
-        let block_name = block.name().clone();
-        let binding = StreamController::get_stream_by_id(self.task_id)?;
-        let mut streamer = binding.lock().map_err(|_| K2Error { code: K2ErrorCode::LockError, message: "Failed to lock stream controller".into() })?;
-        (*streamer).add_processor(block.name().clone(), block)?;
-        
         self.blocks.push(block_name.clone());
         Ok(())
     }
@@ -121,6 +124,7 @@ impl Chain {
     }
 }
 
+
 pub struct OperativeMode {
     pub name: String,
     pub id: usize,
@@ -145,12 +149,20 @@ impl OperativeMode {
     pub fn set_stream_id(&mut self, stream_id: isize) {
         self.stream_id = stream_id;
     }
-    pub fn add_chain(&mut self, name: String, mut chain: Chain) -> Result<(), K2Error> {
+    pub fn add_chain(&mut self, name: String, chain: Arc<Mutex<Chain>>) -> Result<(), K2Error> {
         if self.chains.contains_key(&name) {
             return Err(K2Error { code: K2ErrorCode::AlreadyExists, message: "Chain already exists".into() });
         }
-        chain.set_stream_id(self.stream_id);
-        self.chains.insert(name, Arc::new(Mutex::new(chain)));
+        match chain.lock() {
+            Ok(mut chain) => {
+                (*chain).set_stream_id(self.stream_id);
+            }
+            Err(_) => {
+                return Err(k2err!(K2ErrorCode::LockError, ""));
+            }
+        }
+        dbg!(self.stream_id);
+        self.chains.insert(name, chain);
         Ok(())
     }
     pub fn get_chain(&self, name: &String) -> Result<&Arc<Mutex<Chain>>, K2Error> {
