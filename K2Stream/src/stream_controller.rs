@@ -29,10 +29,6 @@ pub struct StreamController {
 
 impl StreamController {
     pub fn create(name: String) -> Result<isize, K2Error> {
-        let mode = OperativeMode::new("default".to_string(), 0);
-        let mut modes = HashMap::new();
-        modes.insert(0, mode);
-
         let mut self_instance = Self {
             name: name.clone(),
             stream_id: -1 as isize,
@@ -46,7 +42,7 @@ impl StreamController {
                 repository: "".to_string(),
             },
             stream_block: StreamBlock::new(),
-            modes,
+            modes: HashMap::new(),
             current_mode_id: 0,
             command_map: HashMap::new(),
             state: Arc::new(Mutex::new(StreamState::Uninitialized)),
@@ -69,6 +65,8 @@ impl StreamController {
         self_instance.stream_block.set_stream_id(stream_id);
         dbg!("Registering commands...");
         self_instance.register_commands()?;
+        let mode = OperativeMode::new("default".to_string(), 0);
+        self_instance.add_mode(0, mode)?;
         dbg!("Registering stream controller in table...");
         {
             let mut stream_table = STREAM_TABLE.get_or_init(|| Mutex::new(Vec::new())).lock().map_err(|_| K2Error { code: K2ErrorCode::LockError, message: "Failed to lock stream table".into() })?;
@@ -167,6 +165,8 @@ impl StreamController {
         } else {
             mode.set_stream_id(self.get_stream_id());
             self.modes.insert(id, mode);
+            let mode = self.modes.get(&id).unwrap();
+            dbg!(mode.get_stream_id());
             Ok(())
         }
     }
@@ -246,6 +246,7 @@ impl ProcessorTrait for StreamController {
     }
 
     fn initialize(&mut self) -> Result<(), K2Error> {
+        dbg!("Reading state...");
         let mut state = self.state.lock().map_err(|_| K2Error { code: K2ErrorCode::LockError, message: "Failed to lock stream state".into() })?;
         if self.stream_id == -1 {
             return Err(K2Error { code: K2ErrorCode::Uninitialized, message: "Stream ID is not set".into() });
@@ -253,9 +254,15 @@ impl ProcessorTrait for StreamController {
         if *state == StreamState::Running {
             return Err(K2Error { code: K2ErrorCode::NotAllowed, message: "Stream is already running".into() });
         }
+        for block in self.processors.values_mut() {
+            block.initialize()?;
+        }
+        dbg!("Initializing modes...");
         for mode in self.modes.values_mut() {
+            dbg!(mode.get_stream_id());
             mode.initialize()?;
         }
+        dbg!("End initilize...");
         *state = StreamState::Initialized;
         Ok(())
     }

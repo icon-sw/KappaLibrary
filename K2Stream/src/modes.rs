@@ -65,7 +65,7 @@ impl Chain {
     add_block(&mut self, block_name: String, block: &StreamBlock) -> Result<(),K2Error> {
         if block.get_processor_type() == StreamType::RECEIVER {
             if self.input_present {
-                return Err(K2Error { code: K2ErrorCode::AlreadyExists, message: "Input block already exists".into() });
+                return Err(k2err!( K2ErrorCode::AlreadyExists, "Input block already exists"));
             }
             self.input_present = true;
         }
@@ -76,35 +76,26 @@ impl Chain {
     pub fn initialize(&mut self) -> Result<(), K2Error> {
         if !self.initialized {
             if self.stream_id == -1 {
-                return Err(K2Error { code: K2ErrorCode::Uninitialized, message: "Stream ID is not set".into() });
+                return Err(k2err!( K2ErrorCode::Uninitialized, "Stream ID is not set"));
             }
             self.connections.check()?;
-        }
-        let stream_processor_arc = StreamController::get_stream_by_id(self.get_stream_id())?;
-        let mut stream_processor = stream_processor_arc.lock().map_err(|_| K2Error { code: K2ErrorCode::LockError, message: "Failed to lock stream processor".into() })?;
-        
-        for block_name in self.blocks.iter().rev() {
-            let block = stream_processor.get_processors_mut(block_name.clone())?;
-            if block.initialize().is_err() {
-                return Err(K2Error { code: K2ErrorCode::ProcessError, message: "Failed to initialize processor".into() });
-            }
         }
         self.initialized = true;
         Ok(())
     }
     pub fn process(&mut self) -> Result<(), K2Error> {
         if !self.initialized {
-            return Err(K2Error { code: K2ErrorCode::Uninitialized, message: "Chain is not initialized".into() });
+            return Err(k2err!( K2ErrorCode::Uninitialized, "Chain is not initialized"));
         }
         let stream_processor_arc = StreamController::get_stream_by_id(self.get_stream_id())?;
         *self.running.lock().unwrap() = true;
         while *self.running.lock().unwrap() {
             for block_name in self.blocks.iter().rev() {
-                let mut stream_processor = stream_processor_arc.lock().map_err(|_| K2Error { code: K2ErrorCode::LockError, message: "Failed to lock stream processor".into() })?;
+                let mut stream_processor = stream_processor_arc.lock().map_err(|_| k2err!( K2ErrorCode::LockError, "Failed to lock stream processor"))?;
                 let block = stream_processor.get_processors_mut(block_name.clone())?;
                 if block.process().is_err() {
                     *self.running.lock().unwrap() = false;
-                    return Err(K2Error { code: K2ErrorCode::ProcessError, message: "Failed to process chain".into() });
+                    return Err(k2err!( K2ErrorCode::ProcessError, "Failed to process chain"));
                 }
             }
         }   
@@ -117,7 +108,7 @@ impl Chain {
             let mut stream_processor = stream_processor_arc.lock().map_err(|_| ())?;
             let block = stream_processor.get_processors_mut(block_name.clone())?;
             if block.finalize().is_err() {
-                return Err(K2Error { code: K2ErrorCode::ProcessError, message: "Error in chain finalize".to_string() })
+                return Err(k2err!( K2ErrorCode::ProcessError, "Error in chain finalize"))
             }
         }
         Ok(())
@@ -151,7 +142,7 @@ impl OperativeMode {
     }
     pub fn add_chain(&mut self, name: String, chain: Arc<Mutex<Chain>>) -> Result<(), K2Error> {
         if self.chains.contains_key(&name) {
-            return Err(K2Error { code: K2ErrorCode::AlreadyExists, message: "Chain already exists".into() });
+            return Err(k2err!( K2ErrorCode::AlreadyExists, "Chain already exists"));
         }
         match chain.lock() {
             Ok(mut chain) => {
@@ -161,40 +152,43 @@ impl OperativeMode {
                 return Err(k2err!(K2ErrorCode::LockError, ""));
             }
         }
+        dbg!(chain.lock().unwrap().get_stream_id());
         dbg!(self.stream_id);
         self.chains.insert(name, chain);
         Ok(())
     }
     pub fn get_chain(&self, name: &String) -> Result<&Arc<Mutex<Chain>>, K2Error> {
-        self.chains.get(name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Chain not found".into() })
+        self.chains.get(name).ok_or(k2err!( K2ErrorCode::NotFound, "Chain not found"))
     }
     pub fn get_chain_mut(&mut self, name: &String) -> Result<&mut Arc<Mutex<Chain>>, K2Error> {
-        self.chains.get_mut(name).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "Chain not found".into() })
+        self.chains.get_mut(name).ok_or(k2err!( K2ErrorCode::NotFound, "Chain not found"))
     }
     pub fn initialize(&mut self) -> Result<(), K2Error> {
         if self.stream_id == -1 {
-            return Err(K2Error { code: K2ErrorCode::Uninitialized, message: "Stream ID is not set".into() });
+            return Err(k2err!( K2ErrorCode::Uninitialized, "Stream ID is not set"));
         }
         for chain in self.chains.values_mut() {
-            let mut chain = chain.lock().map_err(|_| K2Error { code: K2ErrorCode::LockError, message: "Failed to lock chain".into() })?;
+            dbg!("Chain init");
+            let mut chain = chain.lock().map_err(|_| k2err!( K2ErrorCode::LockError, "Failed to lock chain"))?;
             if chain.initialize().is_err() {
-                return Err(K2Error { code: K2ErrorCode::ProcessError, message: "Failed to initialize chain".into() });
+                return Err(k2err!( K2ErrorCode::ProcessError, "Failed to initialize chain"));
             }
+            dbg!("Chain init end");
         }
         Ok(())
     }
     pub fn process(&mut self) -> Result<(), K2Error> {
         if self.stream_id == -1 {
-            return Err(K2Error { code: K2ErrorCode::Uninitialized, message: "Stream ID is not set".into() });
+            return Err(k2err!( K2ErrorCode::Uninitialized, "Stream ID is not set"));
         }
         for chain in self.chains.values_mut() {
             // Todo: Gestione dei task
             let chain_clone = chain.clone();
             let handle: JoinHandle<Result<(), K2Error>> = std::thread::spawn( move || {
-                let mut chain = chain_clone.lock().map_err(|_| K2Error { code: K2ErrorCode::LockError, message: "Failed to lock chain".into() })?;
+                let mut chain = chain_clone.lock().map_err(|_| k2err!( K2ErrorCode::LockError, "Failed to lock chain"))?;
                 chain.process() 
             });
-            let chain = chain.lock().map_err(|_| K2Error { code: K2ErrorCode::LockError, message: "Failed to lock chain".into() })?;
+            let chain = chain.lock().map_err(|_| k2err!( K2ErrorCode::LockError, "Failed to lock chain"))?;
             self.chain_results.insert(chain.name.clone(), handle);
         }
         Ok(())
@@ -202,16 +196,16 @@ impl OperativeMode {
     pub fn finalize(&mut self) -> Result<(), K2Error> {
         let mut result = Ok(());
         for (chain_name, chain) in self.chains.iter() {
-            let mut chain = chain.lock().map_err(|_| K2Error { code: K2ErrorCode::LockError, message: "Failed to lock chain".into() })?;
+            let mut chain = chain.lock().map_err(|_| k2err!( K2ErrorCode::LockError, "Failed to lock chain"))?;
             if chain.finalize().is_err() {
-                result = Err(K2Error { code: K2ErrorCode::ProcessError, message: "Failed to finalize chain".into() });
+                result = Err(k2err!( K2ErrorCode::ProcessError, "Failed to finalize chain"));
             }
             if let Some(handle) = self.chain_results.remove(chain_name) {
-                if handle.join().map_err(|_| K2Error { code: K2ErrorCode::ProcessError, message: "Failed to join chain thread".into() })?.is_err() {
-                    result = Err(K2Error { code: K2ErrorCode::ProcessError, message: "Failed to finalize chain thread".into() });
+                if handle.join().map_err(|_| k2err!( K2ErrorCode::ProcessError, "Failed to join chain thread"))?.is_err() {
+                    result = Err(k2err!( K2ErrorCode::ProcessError, "Failed to finalize chain thread"));
                 }
             } else {
-                result = Err(K2Error { code: K2ErrorCode::NotFound, message: "Chain handle not found".into() });
+                result = Err(k2err!( K2ErrorCode::NotFound, "Chain handle not found"));
             }
         }
         result
