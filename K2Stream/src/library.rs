@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{errors::{K2Error, K2ErrorCode}, processors::ProcessorTrait};
 
-pub type ProcessorNew = fn(name: String) -> Result<Box<dyn ProcessorTrait>, ()>;
+pub type ProcessorNew = fn(name: String) -> Result<Box<dyn ProcessorTrait>, K2Error>;
 
 pub type ProcessorNewFFI = extern "C" fn(name: *const c_char) -> *mut c_void;
 

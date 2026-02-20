@@ -50,7 +50,7 @@ pub struct Parameter<T: 'static + Send + Sync> {
 }
 
 impl<T: 'static + PrimInt + Sync + Send> Parameter<T> {
-    pub fn int(name: DataHeader, default: T, param_type: ParameterType) -> Result<Self, ()> {
+    pub fn int(name: DataHeader, default: T, param_type: ParameterType) -> Result<Self, K2Error> {
         let param = Self {
             name: name.clone(),
             value: default.clone(),
@@ -66,7 +66,7 @@ impl<T: 'static + PrimInt + Sync + Send> Parameter<T> {
 }
 
 impl<T: 'static + Float + Sync + Send> Parameter<T> {
-    pub fn float(name: DataHeader, default: T, param_type: ParameterType) -> Result<Self, ()> {
+    pub fn float(name: DataHeader, default: T, param_type: ParameterType) -> Result<Self, K2Error> {
         let param = Self {
             name: name.clone(),
             value: default.clone(),
@@ -82,7 +82,7 @@ impl<T: 'static + Float + Sync + Send> Parameter<T> {
 }
 
 impl<T: 'static + Clone + PartialOrd + Send + Sync> Parameter<T> {
-    pub fn set_range(&mut self, value: T, range_type: ParameterRangeType) -> Result<(), ()> {
+    pub fn set_range(&mut self, value: T, range_type: ParameterRangeType) -> Result<(), K2Error> {
         match range_type {
             ParameterRangeType::Range => {
                 self.values.push(value);
@@ -91,14 +91,14 @@ impl<T: 'static + Clone + PartialOrd + Send + Sync> Parameter<T> {
                 if value <= self.max_value {
                     self.min_value = value;
                 } else {
-                    return Err(())
+                    return Err(K2Error { code: K2ErrorCode::OutOfRange, message: "Miminum range shall be less or equal to current max range".to_string() })
                 }
             }
             ParameterRangeType::RangeEnd => {
                 if value >= self.min_value {
                     self.max_value = value;
                 } else {
-                    return Err(())
+                    return Err(K2Error { code: K2ErrorCode::OutOfRange, message: "Maximum range shall be greater or equal to current min range".to_string() })
                 }
             }
         }

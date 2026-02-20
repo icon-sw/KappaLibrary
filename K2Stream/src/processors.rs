@@ -82,7 +82,7 @@ impl StreamBlock
     }
     pub fn add_parameter<T: 'static>(&mut self, kind: ParameterValueType, name: String, parameter: ParameterType) -> Result<(), K2Error>
     where   T: 'static + Clone + Sync + Send + Float + PrimInt + Default,
-            Result<Parameter<T>, ()>: DataTrait 
+            Result<Parameter<T>, K2Error>: DataTrait 
     {
         match kind {
             ParameterValueType::INTEGER => {

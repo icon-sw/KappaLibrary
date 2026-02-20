@@ -107,14 +107,14 @@ impl Chain {
         }   
         Ok(())
     }
-    pub fn finalize(&mut self) -> Result<(), ()> {
+    pub fn finalize(&mut self) -> Result<(), K2Error> {
         *self.running.lock().unwrap() = false;
         let stream_processor_arc = StreamController::get_stream_by_id(self.get_stream_id())?;
         for block_name in self.blocks.iter().rev() {
             let mut stream_processor = stream_processor_arc.lock().map_err(|_| ())?;
             let block = stream_processor.get_processors_mut(block_name.clone())?;
             if block.finalize().is_err() {
-                return Err(())
+                return Err(K2Error { code: K2ErrorCode::ProcessError, message: "Error in chain finalize".to_string() })
             }
         }
         Ok(())
@@ -126,7 +126,7 @@ pub struct OperativeMode {
     pub id: usize,
     stream_id: isize,
     chains: HashMap<String, Arc<Mutex<Chain>>>,
-    chain_results: HashMap<String, JoinHandle<Result<(), ()>>>,
+    chain_results: HashMap<String, JoinHandle<Result<(), K2Error>>>,
 }
 
 impl OperativeMode {

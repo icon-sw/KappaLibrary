@@ -11,3 +11,4 @@ serde_json = "1.0"
 libloading = "0.9.0"
 processor_macro = { path = "../macro/processor_macro"}
 memory_macro = { path = "../macro/memory_macro"}
+libc = "0.2.182"
