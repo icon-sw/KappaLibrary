@@ -18,3 +18,5 @@ Creazione Library:
     - k2_stream = { path = "../K2Stream"}
     - processor_macro = { path = "../macro/processor_macro"}
     - memory_macro = { path = "../macro/memory_macro"}
+
+Sostituire tutti i K2Error{} con k2err! in K2Stream

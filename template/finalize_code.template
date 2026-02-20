@@ -1,3 +1,3 @@
-fn finalize(&mut self) -> Result<(), ()> {
+fn finalize(&mut self) -> Result<(), K2Error> {
     Ok(()) // FINALIZE_CODE
 }

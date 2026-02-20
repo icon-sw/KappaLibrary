@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use k2_stream::processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorTrait, StreamBlock, StreamState};
-use k2_stream::memory::{DataHeader, MemoryTrait};
+use k2_stream::processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState};
+use k2_stream::{errors::{K2ErrorCode, K2Error}, memory::{DataHeader, MemoryTrait}};
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
 // END_K2_IMPORT
@@ -18,7 +18,7 @@ pub struct FakeProcessor {
 
 
 impl ProcessorTrait for FakeProcessor {
-    fn new(name: String) -> Result<Box<dyn ProcessorTrait>, ()> {
+    fn new(name: String) -> ProcessorNewReturn {
         let self_instance = Self {
             // START_K2_INIT
             name: name.clone(),
@@ -40,13 +40,13 @@ impl ProcessorTrait for FakeProcessor {
         // END_USER_MEMBER_CREATION
         Ok(Box::new(self_instance))
     }
-    fn initialize(&mut self ) -> Result<(), ()> {
+    fn initialize(&mut self ) -> Result<(), K2Error> {
         Ok(()) // INITIALIZE_CODE
     }
-    fn process(&mut self) -> Result<(), ()> {
+    fn process(&mut self) -> Result<(), K2Error> {
         Ok(()) // PROCESS_CODE
     }
-    fn finalize(&mut self) -> Result<(), ()> {
+    fn finalize(&mut self) -> Result<(), K2Error> {
         Ok(()) // FINALIZE_CODE
     }
 }

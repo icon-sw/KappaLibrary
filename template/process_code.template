@@ -1,3 +1,3 @@
-fn process(&mut self) -> Result<(), ()> {
+fn process(&mut self) -> Result<(), K2Error> {
     Ok(()) // PROCESS_CODE
 }
