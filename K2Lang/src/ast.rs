@@ -444,7 +444,7 @@ impl ProcessorTrait for AstProcessor {
         callbacks_cmd.insert("connect".to_string(), AstProcessor::parse_connect);
         callbacks_cmd.insert("disconnect".to_string(), AstProcessor::parse_disconnect);
         callbacks_cmd.insert("exec".to_string(), AstProcessor::parse_exec);
-        let ret = AstProcessor {
+        let mut ret = AstProcessor {
             name,
             header: ProcessorHeader {
                 proc_name: "AstProcessor".to_string(),
@@ -460,11 +460,11 @@ impl ProcessorTrait for AstProcessor {
             objects: HashMap::new(),
             callbacks_cmd,
         };
+        ret.stream_block.add_input::<K2ReturnStruct>("command".to_string())?;
+        ret.stream_block.add_output::<K2ReturnStruct>("response".to_string())?;
         Ok(Box::new(ret))
     }
     fn initialize(&mut self ) -> Result<(), K2Error> {
-        self.stream_block.add_input::<K2ReturnStruct>("command".to_string())?;
-        self.stream_block.add_output::<K2ReturnStruct>("response".to_string())?;
         Ok(())
     }
     fn process(&mut self) -> Result<(), K2Error> {
