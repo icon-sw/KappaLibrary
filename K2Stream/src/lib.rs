@@ -1,6 +1,6 @@
 pub mod memory;
 pub mod connections;
-pub mod parameter;
+pub mod parameters;
 pub mod states;
 pub mod processors;
 pub mod errors;
