@@ -1,7 +1,7 @@
 use std::{collections::{VecDeque, vec_deque::Iter}, sync::{Arc, Mutex, mpsc::{Receiver, SyncSender}}};
 use memory_macro::K2Memory;
 
-use crate::{errors::{K2Error, K2ErrorCode}, memory::{DataHeader, MemoryTrait}};
+use crate::{errors::{K2Error, K2ErrorCode}, k2err, memory::{DataHeader, MemoryTrait}};
 
 #[derive(K2Memory)]
 pub struct Input<T: 'static + Send + Sync> {
@@ -12,7 +12,7 @@ pub struct Input<T: 'static + Send + Sync> {
 
 impl<T: 'static + Send + Sync> Input<T> {
     pub fn new(name: DataHeader) -> Self {
-        let (sender, receiver) = std::sync::mpsc::sync_channel(0);
+        let (sender, receiver) = std::sync::mpsc::sync_channel(100);
         Self { name, receiver: Arc::new(Mutex::new(receiver)), sender }
     }
     pub fn get_header(&self) -> &DataHeader {
@@ -22,7 +22,9 @@ impl<T: 'static + Send + Sync> Input<T> {
         self.sender.clone()
     }
     pub fn receive(&self) -> Result<T, K2Error> {
-        self.receiver.lock().map_err(|_| K2Error { code: K2ErrorCode::LockError, message: "Failed to lock receiver".into() })?.recv().map_err(|_| K2Error { code: K2ErrorCode::NotFound, message: "Failed to receive data".into() })
+        self.receiver
+            .lock().map_err(|_| k2err!( K2ErrorCode::LockError, "Failed to lock receiver"))?
+            .recv().map_err(|_| k2err!( K2ErrorCode::NotFound, "Failed to receive data"))
     }
 }
 #[derive(K2Memory)]
@@ -43,7 +45,7 @@ impl<T: 'static + Send + Sync + Clone> Output<T> {
     }
     pub fn send(&self, data: T) -> Result<(), K2Error> {
         for sender in &self.sender {
-            sender.send(data.clone()).map_err(|_| K2Error { code: K2ErrorCode::NotFound, message: "Failed to send data".into() })?;
+            sender.send(data.clone()).map_err(|_| k2err!( K2ErrorCode::NotFound, "Failed to send data"))?;
         }
         Ok(())
     }
@@ -80,9 +82,6 @@ impl ConnectionGraph {
     pub fn get_nodes_iter(&self) -> Iter<'_, String> {
         self.nodes.iter()
     }
-    pub fn get_nodes(&self) -> Vec<String> {
-        self.nodes.iter().cloned().collect()
-    }
     pub fn add_connection(&mut self, from: String, to: String) {
         self.connections.push(Connection { from, to });
         self.sorted = false;
@@ -90,27 +89,36 @@ impl ConnectionGraph {
     fn sort(&mut self) {
         if !self.sorted {
             self.nodes.clear();
+            let mut sorted_nodes: VecDeque<String> =VecDeque::new();
             for connection in self.connections.clone() {
                 let from = connection.from();
                 let to = connection.to();
-                let from_index = self.get_nodes_iter().position(|item| item == &from.clone());
-                let to_index = self.get_nodes_iter().position(|item| item == &to.clone());
+                dbg!(format!("Processing {}->{}", from.clone(), to.clone()));
+                let from_index = sorted_nodes.iter().position(|item| item == &from.clone());
+                let to_index = sorted_nodes.iter().position(|item| item == &to.clone());
                 if let Some(to_index) = to_index {
                     if let Some(from_index) = from_index {
                         if from_index > to_index {
-                            self.nodes.remove(from_index);
-                            self.nodes.insert(to_index, from.clone());
+                            dbg!(format!("Removing {} from original position", from.clone()));
+                            sorted_nodes.remove(from_index);
+                            dbg!(format!("Adding {} after {}", from.clone(), to.clone()));
+                            sorted_nodes.insert(to_index, from.clone());
                         }
                     } else {
-                        self.nodes.insert(to_index, from.clone());
+                        dbg!(format!("Adding {} after {}", from.clone(), to.clone()));
+                        sorted_nodes.insert(to_index, from.clone());
                     }
                 } else {
                     if from_index.is_none() {
-                        self.nodes.push_back(from.clone());
+                        dbg!(format!("Adding {}", from.clone()));
+                        sorted_nodes.push_back(from.clone());
                     }
-                    self.nodes.push_back(to.clone());
+                    dbg!(format!("Adding {}", to.clone()));
+                    sorted_nodes.push_back(to.clone());
                 }
+                dbg!(format!("{:?}", sorted_nodes));
             }
+            self.nodes = sorted_nodes;
         }
     }
     pub fn check(&mut self) -> Result<(),K2Error> {
@@ -123,9 +131,52 @@ impl ConnectionGraph {
             let from_index = self.get_nodes_iter().position(|item| item == &from.clone());
             let to_index = self.get_nodes_iter().position(|item| item == &to.clone());
             if from_index > to_index {
-                return Err(K2Error { code: K2ErrorCode::BadFormat, message: format!("Invalid connection from {} to {}", from, to) });
+                return Err(k2err!( K2ErrorCode::BadFormat, format!("Invalid connection from {} to {}", from, to)));
             }
         }
+        self.sorted = true;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_io() {
+        let input_test = Input::<String>::new("test_input".to_string());
+        assert_eq!(input_test.get_header(), &"test_input".to_string());
+        let mut output_test =  Output::<String>::new("test_output".to_string());
+        assert_eq!(output_test.get_header(), &"test_output".to_string());
+        let sender = input_test.get_sender();
+        output_test.connect(sender);
+        assert!(output_test.send("hello".to_string()).is_ok());
+        let input = input_test.receive();
+        assert!(input.is_ok());
+        if let Ok(res) = input {
+            assert_eq!(res, "hello".to_string());
+        }
+    }
+    #[test]
+    fn test_connection_graph() {
+        let mut graph = ConnectionGraph::new();
+        graph.add_connection("test_1".to_string(), "test_2".to_string());
+        graph.add_connection("test_3".to_string(), "test_4".to_string());
+        graph.add_connection("test_3".to_string(), "test_2".to_string());
+        graph.add_connection("test_5".to_string(), "test_4".to_string());
+
+        assert!(!graph.is_sorted());
+        assert!(graph.check().is_ok());
+        assert!(graph.is_sorted());
+        assert_eq!(graph.nodes[0], "test_1".to_string());
+        assert_eq!(graph.nodes[1], "test_3".to_string());
+        assert_eq!(graph.nodes[2], "test_2".to_string());
+        assert_eq!(graph.nodes[3], "test_5".to_string());
+        assert_eq!(graph.nodes[4], "test_4".to_string());
+        graph.add_connection("test_2".to_string(), "test_1".to_string());
+        assert!(!graph.is_sorted());
+        assert!(graph.check().is_err());
+
     }
 }
