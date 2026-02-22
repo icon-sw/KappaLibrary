@@ -88,21 +88,30 @@ impl StreamBlock
         match kind {
             ParameterValueType::INTEGER => {
                 self.memory.insert(
-                    name.clone(), 
+                    name.clone(),
                     Box::new(
                         Parameter::<T>::int(
-                            name, 
-                            T::default(), 
-                            parameter, 
+                            name,
+                            T::default(),
+                            parameter,
                 )))
             }
             ParameterValueType::FLOAT => {
                 self.memory.insert(
-                    name.clone(), 
+                    name.clone(),
                     Box::new(
                         Parameter::<T>::float(
-                            name, T::default(), 
+                            name, T::default(),
                             parameter, 
+                )))
+            }
+            ParameterValueType::OTHERS => {
+                self.memory.insert(
+                    name.clone(),
+                    Box::new(
+                        Parameter::<T>::new(
+                            name, T::default(),
+                            parameter,
                 )))
             }
         }
