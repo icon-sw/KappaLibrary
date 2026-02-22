@@ -31,7 +31,7 @@ impl StreamController {
     pub fn create(name: String) -> Result<isize, K2Error> {
         let mut self_instance = Self {
             name: name.clone(),
-            stream_id: -1 as isize,
+            stream_id: -1_isize,
             header: ProcessorHeader {
                 proc_name: "StreamController".to_string(),
                 description: "A processor that controls the stream blocks and the execution of the modes".to_string(),
@@ -141,8 +141,8 @@ impl StreamController {
         let mut to_block = None;
         let from_split: Vec<&str> = from.split(".").collect();
         let to_split: Vec<&str> = to.split(".").collect();
-        let from_proc: String = from_split.get(0).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "From processor not found".into() })?.to_string();
-        let to_proc: String = to_split.get(0).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "To processor not found".into() })?.to_string();
+        let from_proc: String = from_split.first().ok_or(K2Error { code: K2ErrorCode::NotFound, message: "From processor not found".into() })?.to_string();
+        let to_proc: String = to_split.first().ok_or(K2Error { code: K2ErrorCode::NotFound, message: "To processor not found".into() })?.to_string();
         let from_connector = from_split.get(1).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "From connector not found".into() })?.to_string();
         let to_connector = to_split.get(1).ok_or(K2Error { code: K2ErrorCode::NotFound, message: "To connector not found".into() })?.to_string();
         for (proc_name, proc) in self.processors.iter_mut(){

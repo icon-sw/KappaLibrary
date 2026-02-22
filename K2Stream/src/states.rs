@@ -50,7 +50,7 @@ impl<T: 'static + Clone+ Send + Sync> DataTrait for State<T> {
     fn is_setted(&self) -> bool {
         self.initialized
     }
-    fn initialize(&mut self) -> () {
+    fn initialize(&mut self) {
         self.value = self.init.clone();
         self.initialized = true;   
     }

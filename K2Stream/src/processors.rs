@@ -32,13 +32,19 @@ pub struct StreamBlock {
     outputs: HashMap<String, Box<dyn MemoryTrait>>,
 }
 
+impl Default for StreamBlock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StreamBlock
 {
     pub fn new() -> Self {
         let id = rand::rng().random::<u64>() as usize;
         Self {
             id,
-            stream_id: -1 as isize,
+            stream_id: -1_isize,
             task_id: Vec::new(),
             inputs: HashMap::new(),
             outputs: HashMap::new(),

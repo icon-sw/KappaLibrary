@@ -47,8 +47,8 @@ impl Chain {
             connections: ConnectionGraph::new(),
             input_present: false,
             initialized: false,
-            stream_id: -1 as isize,
-            task_id: task_id,
+            stream_id: -1_isize,
+            task_id,
             running: Arc::new(Mutex::new(false)),
         }
     }

@@ -19,6 +19,12 @@ pub struct Memory {
     data: HashMap<DataHeader, Box<dyn DataTrait>>,
 }
 
+impl Default for Memory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Memory {
     pub fn new() -> Self {
         Self {
@@ -33,8 +39,8 @@ impl Memory {
         Ok(())
     }
     pub fn update(&mut self, header: DataHeader, data: Box<dyn DataTrait>) -> Result<(), K2Error> {
-        if self.data.contains_key(&header) {
-            self.data.insert(header, data);
+        if let std::collections::hash_map::Entry::Occupied(mut e) = self.data.entry(header) {
+            e.insert(data);
             Ok(())
         } else {
             Err(K2Error { code: K2ErrorCode::NotFound, message: "Data with this header does not exist".into() })

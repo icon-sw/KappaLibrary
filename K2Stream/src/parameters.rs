@@ -56,7 +56,7 @@ impl<T: 'static + PrimInt + Sync + Send> Parameter<T> {
     pub fn int(name: DataHeader, default: T, param_type: ParameterType) -> Result<Self, K2Error> {
         let param = Self {
             name: name.clone(),
-            value: default.clone(),
+            value: default,
             default,
             boundable: true,
             min_value: Some(T::min_value()),
@@ -73,7 +73,7 @@ impl<T: 'static + Float + Sync + Send> Parameter<T> {
     pub fn float(name: DataHeader, default: T, param_type: ParameterType) -> Result<Self, K2Error> {
         let param = Self {
             name: name.clone(),
-            value: default.clone(),
+            value: default,
             default,
             boundable: true,
             min_value: Some(T::neg_infinity()),
@@ -144,21 +144,18 @@ impl<T: 'static + Clone + PartialOrd + Send + Sync> Parameter<T>
         if self.param_type == ParameterType::STATIC && self.setted {
             return Err(k2err!( K2ErrorCode::InvalidOperation, "Cannot set static parameter"))
         }
-        if self.values.len() > 0 {
-            if !self.values.contains(&value) {
+        if !self.values.is_empty()
+            && !self.values.contains(&value) {
                 return Err(k2err!( K2ErrorCode::OutOfRange, "Value is not in range"))
             }
-        }
-        if let Some(min_value) = &self.min_value {
-            if &value < min_value {
+        if let Some(min_value) = &self.min_value
+            && &value < min_value {
                 return Err(k2err!( K2ErrorCode::OutOfRange, "Value is out of range"))
             }
-        }
-        if let Some(max_value) = &self.max_value {
-            if &value > max_value {
+        if let Some(max_value) = &self.max_value
+            && &value > max_value {
                 return Err(k2err!( K2ErrorCode::OutOfRange, "Value is out of range"))
             }
-        }
         self.value = value;
         self.setted = true;
         Ok(())
@@ -166,7 +163,7 @@ impl<T: 'static + Clone + PartialOrd + Send + Sync> Parameter<T>
     pub fn get(&self) -> &T {
         &self.value
     }
-    pub fn default(&mut self) -> () {
+    pub fn default(&mut self) {
         self.value = self.default.clone();
         self.setted = true;
     }
@@ -182,7 +179,7 @@ impl<T: 'static + Clone+ Send + Sync> DataTrait for Parameter<T> {
     fn is_setted(&self) -> bool {
         self.setted
     }
-    fn initialize(&mut self) -> () {
+    fn initialize(&mut self) {
         self.value = self.default.clone();
         self.setted = true;
     }

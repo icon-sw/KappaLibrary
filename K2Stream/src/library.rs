@@ -106,6 +106,12 @@ pub struct LibraryHandler {
     modules: HashMap<String, LibraryStruct>,
 }
 
+impl Default for LibraryHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LibraryHandler {
     pub fn new() -> Self {
         LibraryHandler {

@@ -16,19 +16,19 @@ pub enum K2ErrorCode {
 
 impl std::fmt::Display for K2ErrorCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            &K2ErrorCode::NotAllowed => write!(f, "NotAllowed"),
-            &K2ErrorCode::NotFound => write!(f, "NotFound"),
-            &K2ErrorCode::ErrorRange => write!(f, "ErrorRange"),
-            &K2ErrorCode::AlreadyExists => write!(f, "AlreadyExists"),
-            &K2ErrorCode::InvalidValue => write!(f, "InvalidValue"),
-            &K2ErrorCode::BadFormat => write!(f, "BadFormat"),
-            &K2ErrorCode::Uninitialized => write!(f, "Uninitialized"),
-            &K2ErrorCode::LockError => write!(f, "LockError"),
-            &K2ErrorCode::ProcessError => write!(f, "ProcessError"),
-            &K2ErrorCode::OutOfRange => write!(f, "OutOfRange"),
-            &K2ErrorCode::InvalidOperation => write!(f, "InvalidOperation"),
-            &K2ErrorCode::GenericError => write!(f, "GenericError"),
+        match *self {
+            K2ErrorCode::NotAllowed => write!(f, "NotAllowed"),
+            K2ErrorCode::NotFound => write!(f, "NotFound"),
+            K2ErrorCode::ErrorRange => write!(f, "ErrorRange"),
+            K2ErrorCode::AlreadyExists => write!(f, "AlreadyExists"),
+            K2ErrorCode::InvalidValue => write!(f, "InvalidValue"),
+            K2ErrorCode::BadFormat => write!(f, "BadFormat"),
+            K2ErrorCode::Uninitialized => write!(f, "Uninitialized"),
+            K2ErrorCode::LockError => write!(f, "LockError"),
+            K2ErrorCode::ProcessError => write!(f, "ProcessError"),
+            K2ErrorCode::OutOfRange => write!(f, "OutOfRange"),
+            K2ErrorCode::InvalidOperation => write!(f, "InvalidOperation"),
+            K2ErrorCode::GenericError => write!(f, "GenericError"),
         }
     }
 }
@@ -45,8 +45,8 @@ impl From<()> for K2Error {
 }
 
 impl From<K2Error> for () {
-    fn from(_: K2Error) -> () {
-        ()
+    fn from(_: K2Error) {
+        
     }
 }
 

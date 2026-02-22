@@ -68,6 +68,12 @@ pub struct ConnectionGraph {
     sorted: bool,
 }
 
+impl Default for ConnectionGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConnectionGraph {
     pub fn new() -> Self {
         Self {
