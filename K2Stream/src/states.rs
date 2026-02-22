@@ -1,6 +1,6 @@
 use memory_macro::K2Memory;
 
-use crate::{errors::K2Error, memory::{DataHeader, DataTrait, MemoryTrait}};
+use crate::{errors::{K2Error, K2ErrorCode}, k2err, memory::{DataHeader, DataTrait, MemoryTrait}};
 
 #[derive(Clone, K2Memory)]
 pub struct State<T: 'static + Sync + Send> {
@@ -21,16 +21,18 @@ impl<T: 'static + Clone + Sync + Send + Default> State<T> {
         Ok(param)
     }
     pub fn set(&mut self, value: T) -> Result<(), K2Error> {
-        self.value = value;
-        Ok(())
+        if self.initialized {
+            self.value = value;
+            Ok(())
+        }
+        else {
+            Err(k2err!(K2ErrorCode::InvalidOperation, format!("State {} not initialized", self.name)))
+        }
     }
     pub fn get(&self) -> &T {
         &self.value
     }
-    pub fn get_mut(&mut self) -> &mut T {
-        &mut self.value
-    }
-    pub fn initialize(&mut self, value: T) -> Result<(), K2Error> {
+    pub fn set_init(&mut self, value: T) -> Result<(), K2Error> {
         self.value = value.clone();
         self.init = value;
         self.initialized = true;
@@ -56,3 +58,24 @@ impl<T: 'static + Clone+ Send + Sync> DataTrait for State<T> {
 
 unsafe impl<T: 'static + Send + Sync> Send for State<T> {}
 unsafe impl<T: 'static + Send + Sync> Sync for State<T> {}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_states() {
+        let state = State::<f64>::new("test".to_string());
+        assert!(state.is_ok());
+        let mut state = state.unwrap();
+        assert!(!state.is_initialized());
+        assert!(!state.is_setted());
+        assert!(state.set(1.0).is_err());
+        assert!(state.set_init(1.0).is_ok());
+        assert!(state.is_setted());
+        assert!(state.set(2.0).is_ok());
+        assert_eq!(state.get(), &2.0);
+        state.initialize();
+        assert_eq!(state.get(), &1.0);
+    }
+}
