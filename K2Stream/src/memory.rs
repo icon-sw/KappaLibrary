@@ -72,10 +72,58 @@ impl Memory {
 
 #[cfg(test)]
 mod tests {
+    use crate::parameters::{Parameter, ParameterType};
+
     use super::*;
     
     #[test]
-    fn void() -> () {
-        let _a = Memory::new();
+    fn test_memory() -> () {
+        let mut test_memory = Memory::new();
+        let param = Parameter::<f64>::float("test".to_string(), 0.0, ParameterType::DYNAMIC).unwrap();
+        assert!(test_memory.insert("test".to_string(), Box::new(param)).is_ok());
+        let param = Parameter::<i64>::int("test".to_string(), 0, ParameterType::DYNAMIC).unwrap();
+        assert!(test_memory.insert("test".to_string(), Box::new(param)).is_err());
+        assert!(!test_memory.is_initialized());
+        let param = test_memory.get_mut(&"test".to_string());
+        assert!(param.is_some());
+        let param = param.unwrap();
+        let param = param.as_any_mut().downcast_mut::<Parameter<f64>>();
+        assert!(param.is_some());
+        assert!(param.unwrap().set(10.0).is_ok());
+        assert!(test_memory.is_initialized());
+        let param = test_memory.get(&"test".to_string());
+        let param = param.unwrap();
+        let param = param.as_any().downcast_ref::<Parameter<f64>>();
+        assert_eq!(param.unwrap().get(), &10.0);
+        let param = Parameter::<i64>::int("test".to_string(), 0, ParameterType::DYNAMIC).unwrap();
+        assert!(test_memory.update("test".to_string(), Box::new(param)).is_ok());
+        assert!(!test_memory.is_initialized());
+        assert!(test_memory.remove(&"test".to_string()).is_ok());
+        let param = Parameter::<i64>::int("test".to_string(), 0, ParameterType::DYNAMIC).unwrap();
+        assert!(test_memory.update("test".to_string(), Box::new(param)).is_err());
+        assert!(test_memory.remove(&"test".to_string()).is_err());
+        let param = Parameter::<i64>::int("test".to_string(), 0, ParameterType::DYNAMIC).unwrap();
+        assert!(test_memory.insert("test".to_string(), Box::new(param)).is_ok());
+        assert!(test_memory.remove(&"test".to_string()).is_ok());
+        for i in 0..5 {
+            let param_name = format!("test_{}",i);
+            let param = Parameter::<i64>::int(param_name.clone(), i, ParameterType::DYNAMIC).unwrap();
+            assert!(test_memory.insert(param_name.clone(), Box::new(param)).is_ok());
+        }
+        assert_eq!(test_memory.values().count(), 5);
+        let values = test_memory.values_mut();
+        for val in values.into_iter() {
+            let param = val.as_any_mut().downcast_mut::<Parameter<i64>>();
+            assert!(param.is_some());
+            let param = param.unwrap();
+            assert!(param.set(10).is_ok());
+        }
+        let values = test_memory.values();
+        for val in values.into_iter() {
+            let param = val.as_any().downcast_ref::<Parameter<i64>>();
+            assert!(param.is_some());
+            let param = param.unwrap();
+            assert_eq!(param.get(),&10);
+        }
     }
 }
