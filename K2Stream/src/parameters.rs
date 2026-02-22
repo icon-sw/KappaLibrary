@@ -23,21 +23,6 @@ impl fmt::Display for ParameterType {
         }
     }
 }
-#[derive(PartialEq, Clone)]
-pub enum ParameterValueType {
-    INTEGER,
-    FLOAT,
-    OTHERS,
-}
-impl fmt::Display for ParameterValueType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ParameterValueType::INTEGER => write!(f, "INTEGER"),
-            ParameterValueType::FLOAT => write!(f, "FLOAT"),
-            ParameterValueType::OTHERS => write!(f, "OTHERS"),
-        }
-    }
-}
 
 #[derive(Clone, K2Memory)]
 pub struct Parameter<T: 'static + Send + Sync> {
