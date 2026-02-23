@@ -100,12 +100,13 @@ impl Chain {
             return Err(k2err!( K2ErrorCode::Uninitialized, "Chain is not initialized"));
         }
         dbg!("Chain process");
-        let stream_processor_arc = StreamController::get_stream_by_id(self.get_stream_id())?;
         *self.running.lock().unwrap() = true;
         while *self.running.lock().unwrap() {
             for block_name in self.blocks.iter() {
-                let mut stream_processor = stream_processor_arc.lock().map_err(|_| k2err!( K2ErrorCode::LockError, "Failed to lock stream processor"))?;
-                let block = stream_processor.get_processors_mut(block_name.clone())?;
+                let binding = StreamController::get_processor(&block_name.clone())?;
+                let mut block = binding
+                    .lock()
+                    .map_err(|_| k2err!(K2ErrorCode::LockError, "Unable to lock block"))?;
                 dbg!(block.name().clone());
                 if block.process().is_err() {
                     *self.running.lock().unwrap() = false;
@@ -117,10 +118,11 @@ impl Chain {
     }
     pub fn finalize(&mut self) -> Result<(), K2Error> {
         *self.running.lock().unwrap() = false;
-        let stream_processor_arc = StreamController::get_stream_by_id(self.get_stream_id())?;
         for block_name in self.blocks.iter().rev() {
-            let mut stream_processor = stream_processor_arc.lock().map_err(|_| ())?;
-            let block = stream_processor.get_processors_mut(block_name.clone())?;
+            let binding = StreamController::get_processor(&block_name.clone())?;
+            let mut block = binding
+                .lock()
+                .map_err(|_| k2err!(K2ErrorCode::LockError, "Unable to lock block"))?;
             if block.finalize().is_err() {
                 return Err(k2err!( K2ErrorCode::ProcessError, "Error in chain finalize"))
             }
