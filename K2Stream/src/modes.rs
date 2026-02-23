@@ -61,8 +61,7 @@ impl Chain {
     pub fn set_stream_id(&mut self, stream_id: isize) {
         self.stream_id = stream_id;
     }
-    pub fn 
-    add_block(&mut self, block_name: String, block: &StreamBlock) -> Result<(),K2Error> {
+    pub fn add_block(&mut self, block_name: String, block: &StreamBlock) -> Result<(),K2Error> {
         if self.blocks.contains(&block_name) {
             return Err(k2err!( K2ErrorCode::AlreadyExists, "Block already exists"));
         }
@@ -74,6 +73,9 @@ impl Chain {
         }
         self.blocks.push(block_name.clone());
         Ok(())
+    }
+    pub fn get_blocks(&self) -> Vec<String> {
+        self.blocks.clone()
     }
     pub fn connect(&mut self, from_block: String, to_block: String) -> Result<(), K2Error> {
         if self.blocks.contains(&from_block) && self.blocks.contains(&to_block) {
@@ -259,11 +261,25 @@ mod test {
         assert!(chain.add_block("test_block_in".to_string(), &block).is_ok());
         assert!(chain.connect("test_block_out".to_string(), "test_block_in".to_string()).is_ok());
         assert!(chain.initialize().is_err());
-        chain.set_stream_id(1);
-        assert!(chain.initialize().is_ok());
+        assert!(chain.process().is_err());
     }
     #[test]
     fn mode_test() {
-
+        let mut mode = OperativeMode::new("test_mode".to_string(), 1);
+        assert_eq!(mode.get_stream_id(), -1);
+        let chain = Chain::new("test_chain".to_string());
+        assert!(mode.add_chain("test_chain".to_string(), Arc::new(Mutex::new(chain))).is_ok());
+        assert!(mode.add_chain("test_chain".to_string(), Arc::new(Mutex::new(Chain::new("test_chain".to_string())))).is_err());
+        let chain = mode.get_chain_mut(&"test_chain".to_string());
+        assert!(chain.is_ok());
+        let mut block = StreamBlock::new();
+        assert!(block.add_input::<String>("test_input".to_string()).is_ok());
+        assert!(block.add_output::<String>("test_output".to_string()).is_ok());
+        assert!(chain.unwrap().lock().unwrap().add_block("test_block".to_string(), &block).is_ok());
+        let chain = mode.get_chain(&"test_chain".to_string());
+        assert!(chain.is_ok());
+        let blocks = chain.unwrap().lock().unwrap().get_blocks();
+        assert_eq!(blocks.len(), 1);
+        assert!(blocks.contains(&"test_block".to_string()));        
     }
 }
