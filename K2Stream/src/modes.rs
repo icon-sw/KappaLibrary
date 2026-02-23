@@ -63,16 +63,26 @@ impl Chain {
     }
     pub fn 
     add_block(&mut self, block_name: String, block: &StreamBlock) -> Result<(),K2Error> {
+        if self.blocks.contains(&block_name) {
+            return Err(k2err!( K2ErrorCode::AlreadyExists, "Block already exists"));
+        }
         if block.get_processor_type() == StreamType::RECEIVER {
             if self.input_present {
-                return Err(k2err!( K2ErrorCode::AlreadyExists, "Input block already exists"));
+                return Err(k2err!( K2ErrorCode::AlreadyExists, "An input block already exists"));
             }
             self.input_present = true;
         }
         self.blocks.push(block_name.clone());
         Ok(())
     }
-
+    pub fn connect(&mut self, from_block: String, to_block: String) -> Result<(), K2Error> {
+        if self.blocks.contains(&from_block) && self.blocks.contains(&to_block) {
+            self.connections.add_connection(from_block, to_block);
+            Ok(())
+        } else {
+            Err(k2err!(K2ErrorCode::NotFound, "Blocks not found in chain"))
+        }
+    }
     pub fn initialize(&mut self) -> Result<(), K2Error> {
         if !self.initialized {
             if self.stream_id == -1 {
@@ -212,5 +222,48 @@ impl OperativeMode {
             }
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use super::*;
+
+    #[test]
+    fn chain_test_build() {
+        let mut chain = Chain::new("test_chain".to_string());
+        assert_eq!(chain.get_stream_id(), -1);
+        assert_ne!(chain.get_task_id(), -1);
+        chain.set_stream_id(1);
+        assert_eq!(chain.get_stream_id(), 1);
+        let mut block = StreamBlock::new();
+        assert!(block.add_output::<f64>("test_out".to_string()).is_ok());
+        assert!(chain.add_block("test_block".to_string(), &block).is_ok());
+        let mut block = StreamBlock::new();
+        assert!(block.add_output::<f64>("test_out".to_string()).is_ok());
+        assert!(chain.add_block("test_block".to_string(), &block).is_err());
+        let mut block = StreamBlock::new();
+        assert!(block.add_input::<f64>("test_in".to_string()).is_ok());
+        assert!(chain.add_block("test_block".to_string(), &block).is_err());
+    }
+    #[test]
+    fn chain_test_peocess() {
+        let mut chain = Chain::new("test_chain".to_string());
+        let mut block = StreamBlock::new();
+        assert!(block.add_output::<f64>("test_out".to_string()).is_ok());
+        assert!(chain.add_block("test_block_out".to_string(), &block).is_ok());
+        assert!(chain.connect("test_block_out".to_string(), "test_block_in".to_string()).is_err());
+        let mut block = StreamBlock::new();
+        assert!(block.add_input::<f64>("test_in".to_string()).is_ok());
+        assert!(chain.add_block("test_block_in".to_string(), &block).is_ok());
+        assert!(chain.connect("test_block_out".to_string(), "test_block_in".to_string()).is_ok());
+        assert!(chain.initialize().is_err());
+        chain.set_stream_id(1);
+        assert!(chain.initialize().is_ok());
+    }
+    #[test]
+    fn mode_test() {
+
     }
 }
