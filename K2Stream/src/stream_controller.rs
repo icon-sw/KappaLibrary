@@ -243,16 +243,8 @@ impl StreamController {
         from_block.connect::<T>(&from_connector, &to_connector, to_block)?;
         Ok(())
     }
-    pub fn add_command(id: isize, command: String, block_name: String, callback: Callback) -> Result<(), K2Error> {
-        if id < 0 || id > *STREAM_ID_COUNTER.get_or_init(|| Mutex::new(0)).lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream ID counter"))? {
-            return Err(k2err!(K2ErrorCode::InvalidValue, "Invalid stream ID"));
-        }
-        let mut stream_table = STREAM_TABLE.get_or_init(|| Mutex::new(Vec::new())).lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream table"))?;
-        let stream_lock = stream_table.get_mut((id-1) as usize)
-            .ok_or(k2err!(K2ErrorCode::NotFound, format!("Stream {} not found", id)))?;
-        let mut binding = stream_lock.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream"))?;
-        let stream = binding.as_any_mut().downcast_mut::<Self>().ok_or(k2err!(K2ErrorCode::BadFormat, "Failed to downcast stream"))?;
-        if stream.command_map.contains_key(&command) {
+    pub fn add_command(&mut self, command: String, block_name: String, callback: Callback) -> Result<(), K2Error> {
+        if self.command_map.contains_key(&command) {
             return Err(k2err!(K2ErrorCode::AlreadyExists, "Command already exists"));
         }
         if !StreamController::get_processor_table()
@@ -261,8 +253,8 @@ impl StreamController {
             .contains_key(&block_name) {
             return Err(k2err!(K2ErrorCode::NotFound, "Block does not exist"));
         }
-        stream.command_map.insert(command.clone(), block_name);
-        stream.commands_callback.insert(command, callback);
+        self.command_map.insert(command.clone(), block_name);
+        self.commands_callback.insert(command, callback);
         Ok(())
     }
     pub fn execute_command(&mut self, command: String) -> Result<(), K2Error> {
@@ -289,16 +281,16 @@ impl ProcessorTrait for StreamController {
         if *state == StreamState::Running {
             return Err(k2err!(K2ErrorCode::NotAllowed, "Stream is already running"));
         }
-        /*let proc_table = Self::get_processor_table();
+        let proc_table = Self::get_processor_table();
         let proc_table = proc_table.lock().map_err(|_| k2err!(K2ErrorCode::LockError,"")).unwrap();
         let proc_list: Vec<&Arc<Mutex<Box<dyn ProcessorTrait + 'static>>>> = proc_table.iter().filter(|&(key,_)| *key != self.name).map(|(_,v)| v).collect();
         for block in proc_list {
             println!("Block: {}", block.lock().unwrap().name());
-            /*match block.lock() {
-                Ok(mut block)=> { /*block.initialize()? */},
+            match block.lock() {
+                Ok(mut block)=> { block.initialize()? },
                 Err(_) => {return Err(k2err!(K2ErrorCode::LockError, format!("Unable to lock processor")));}
-            };*/
-        }*/
+            };
+        }
         dbg!("Initializing modes...");
         for mode in self.modes.values_mut() {
             dbg!(mode.get_stream_id());
@@ -353,7 +345,12 @@ mod test {
         stream_block: StreamBlock,
         state: Arc<Mutex<StreamState>>,
     }
-
+    impl TestProcessor {
+        pub fn callback(&self) -> Result<(), K2Error> {
+            println!("Name: {}", self.name());
+            Ok(())
+        }
+    }
 
     impl ProcessorTrait for TestProcessor {
         fn new(name: String) -> ProcessorNewReturn {
@@ -563,6 +560,51 @@ mod test {
     }
     #[test]
     fn command_test() {
-
+        let _lock = TEST_MUTEX.lock();
+        let proc_1 = TestProcessor::new("test_1".to_string()).unwrap();
+        let chain = Arc::new(Mutex::new(Chain::new("test_chain".to_string())));
+        let mut mode = OperativeMode::new("Mode_1".to_string(), 1);
+        assert!(mode.add_chain("test_chain".to_string(), chain.clone()).is_ok());
+        let stream_id = StreamController::create("test_stream".to_string());
+        let stream_cntr = StreamController::get_stream_by_id(stream_id.clone().unwrap());
+        let stream_cntr = stream_cntr.unwrap();
+        let mut stream_cntr = stream_cntr.lock().unwrap();
+        let stream_cntr = stream_cntr.as_any_mut().downcast_mut::<StreamController>().unwrap();
+        assert!(stream_cntr.add_mode(1, mode).is_ok());
+        assert!(stream_cntr.add_processor(&chain.clone(), "test_1".to_string(), proc_1).is_ok());
+        assert!(stream_cntr.add_command(
+            "test.callback".to_string(), 
+            "test_1".to_string(), 
+            |proc| TestProcessor::callback(
+                proc.as_any()
+                .downcast_ref::<TestProcessor>()
+                .unwrap()))
+            .is_ok());
+        assert!(stream_cntr.add_command(
+            "test.callback".to_string(), 
+            "test".to_string(), 
+            |proc| TestProcessor::callback(
+                proc.as_any()
+                .downcast_ref::<TestProcessor>()
+                .unwrap()))
+            .is_err());
+        assert!(stream_cntr.add_command(
+            "test.callback".to_string(), 
+            "test_1".to_string(), 
+            |proc| TestProcessor::callback(
+                proc.as_any()
+                .downcast_ref::<TestProcessor>()
+                .unwrap()))
+            .is_err());
+        let ret = stream_cntr.execute_command("test.callback".to_string());
+        match ret {
+            Ok(_) => {},
+            Err(e) => {
+                eprint!("{}: {}", e.code, e.message);
+                assert!(false)
+            }
+            
+        }
+        assert!(stream_cntr.execute_command("test_1.callback".to_string()).is_err());
     }
 }

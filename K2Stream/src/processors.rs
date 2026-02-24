@@ -102,7 +102,10 @@ impl StreamBlock
     }
     pub fn add_command(&mut self, command: String, callback: Callback) -> Result<(), K2Error> {
         let name = command.clone().split(".").next().ok_or(k2err!(K2ErrorCode::InvalidValue, "Invalid command format"))?.to_string();
-        StreamController::add_command(self.stream_id, command, name, callback)
+        let stream_cntr = StreamController::get_stream_by_id(self.stream_id)?;
+        let mut stream_cntr = stream_cntr.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "".to_string()))?;
+        let stream_cntr = stream_cntr.as_any_mut().downcast_mut::<StreamController>().ok_or(k2err!(K2ErrorCode::LockError, ""))?;
+        StreamController::add_command(stream_cntr, command, name, callback)
      }
     pub fn is_initialized(&mut self) -> bool {
         if !self.initialized {
