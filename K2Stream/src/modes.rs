@@ -6,6 +6,8 @@ static TASK_ID_COUNTER: OnceLock<Mutex<isize>> = OnceLock::new();
 
 pub type ChainType = Arc<Mutex<Chain>>;
 
+static CHAIN_RUNNING: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
+
 pub struct ChainBuilder {}
 
 impl ChainBuilder {
@@ -33,7 +35,6 @@ pub struct Chain {
     connections: ConnectionGraph,
     input_present: bool,
     initialized: bool,
-    running: Arc<Mutex<bool>>,
 }
 
 impl Chain {
@@ -49,8 +50,16 @@ impl Chain {
             initialized: false,
             stream_id: -1_isize,
             task_id,
-            running: Arc::new(Mutex::new(false)),
         }
+    }
+    pub fn get_running() -> Result<bool, K2Error> {
+        let run_arc = CHAIN_RUNNING.get_or_init(|| Arc::new(Mutex::new(false)));
+        Ok(*run_arc.lock().map_err(|_| k2err!(K2ErrorCode::LockError, ""))?)
+    }
+    pub fn set_running(value: bool) -> Result<(), K2Error> {   
+        let run_arc = CHAIN_RUNNING.get_or_init(|| Arc::new(Mutex::new(false)));
+        *run_arc.lock().map_err(|_| k2err!(K2ErrorCode::LockError, ""))? = value;
+        Ok(())
     }
     pub fn get_stream_id(&self) -> isize {
         self.stream_id
@@ -100,8 +109,7 @@ impl Chain {
             return Err(k2err!( K2ErrorCode::Uninitialized, "Chain is not initialized"));
         }
         dbg!("Chain process");
-        *self.running.lock().unwrap() = true;
-        while *self.running.lock().unwrap() {
+        loop {
             for block_name in self.blocks.iter() {
                 let binding = StreamController::get_processor(&block_name.clone())?;
                 let mut block = binding
@@ -109,15 +117,17 @@ impl Chain {
                     .map_err(|_| k2err!(K2ErrorCode::LockError, "Unable to lock block"))?;
                 dbg!(block.name().clone());
                 if block.process().is_err() {
-                    *self.running.lock().unwrap() = false;
+                    Chain::set_running(false)?;
                     return Err(k2err!( K2ErrorCode::ProcessError, "Failed to process chain"));
                 }
+            }
+            if !Chain::get_running()? {
+                break;
             }
         }   
         Ok(())
     }
     pub fn finalize(&mut self) -> Result<(), K2Error> {
-        *self.running.lock().unwrap() = false;
         for block_name in self.blocks.iter().rev() {
             let binding = StreamController::get_processor(&block_name.clone())?;
             let mut block = binding
@@ -200,6 +210,7 @@ impl OperativeMode {
         if self.stream_id == -1 {
             return Err(k2err!( K2ErrorCode::Uninitialized, "Stream ID is not set"));
         }
+        Chain::set_running(true)?;
         for chain in self.chains.values_mut() {
             // Todo: Gestione dei task
             let chain_clone = chain.clone();
@@ -214,6 +225,7 @@ impl OperativeMode {
     }
     pub fn finalize(&mut self) -> Result<(), K2Error> {
         let mut result = Ok(());
+        Chain::set_running(false)?;
         for (chain_name, chain) in self.chains.iter() {
             let mut chain = chain.lock().map_err(|_| k2err!( K2ErrorCode::LockError, "Failed to lock chain"))?;
             if chain.finalize().is_err() {

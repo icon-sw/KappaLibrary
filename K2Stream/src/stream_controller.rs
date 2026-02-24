@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard, OnceLock}, thread::JoinHandle}; 
+use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard, OnceLock}, thread::JoinHandle, time::Duration}; 
 
 use processor_macro::K2ProcessorBlock;
 use memory_macro::K2Memory;
@@ -142,10 +142,14 @@ impl StreamController {
             }
             Ok(())
         });
+        
         let stream = Self::get_stream_by_id(stream_id)?.clone();
         let mut stream = stream.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream"))?;
         let stream = stream.as_any_mut().downcast_mut::<Self>().ok_or(k2err!(K2ErrorCode::LockError, ""))?;
         stream.set_stream_handle(Arc::new(Mutex::new(Some(handle))));
+        for modes in stream.modes.values_mut() {
+            modes.process()?;
+        }
         Ok(())
     }
     pub fn add_mode(&mut self, id: usize, mut mode: OperativeMode) -> Result<(), K2Error> {
@@ -326,12 +330,19 @@ impl ProcessorTrait for StreamController {
                 Err(_) => return Err(k2err!(K2ErrorCode::ProcessError, "Failed to join stream thread")),
             }
         }
+        std::thread::sleep(Duration::from_millis(100));
+        dbg!("Finalizing mode");
+        for mode in self.modes.values_mut() {
+            mode.finalize()?;
+        }
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
+    use std::sync::mpsc;
+
     use crate::modes::Chain;
 
     use super::*;
@@ -346,7 +357,7 @@ mod test {
 
     impl ProcessorTrait for TestProcessor {
         fn new(name: String) -> ProcessorNewReturn {
-            let self_instance = Self {
+            let mut self_instance = Self {
                 name: name.clone(),
                 header: ProcessorHeader {
                     proc_name: "TestProcessor".to_string(),
@@ -360,13 +371,18 @@ mod test {
                 stream_block: StreamBlock::new(),
                 state: Arc::new(Mutex::new(StreamState::Uninitialized)),
             };
+            self_instance.get_stream_block_mut().add_input::<i64>("input".to_string())?;
+            self_instance.get_stream_block_mut().add_output::<i64>("output".to_string())?;
+
             Ok(Box::new(self_instance))
         }
         fn initialize(&mut self ) -> Result<(), K2Error> {
             Ok(()) // INITIALIZE_CODE
         }
         fn process(&mut self) -> Result<(), K2Error> {
-            Ok(()) // PROCESS_CODE
+            let a = self.get_stream_block_mut().receive_input::<i64>(&"input".to_string())?;
+            self.get_stream_block_mut().send_output::<i64>(&"output".to_string(), a+1)?;
+            Ok(())
         }
         fn finalize(&mut self) -> Result<(), K2Error> {
             Ok(()) // FINALIZE_CODE
@@ -496,12 +512,13 @@ mod test {
     fn operation_mode() {
         let _lock = TEST_MUTEX.lock();
         StreamController::get_processor_table().lock().unwrap().clear();
-        let mut proc_1 = TestProcessor::new("test_1".to_string()).unwrap();
+        let (output_sender, output_receiver) = mpsc::sync_channel::<i64>(10);
+        let proc_1 = TestProcessor::new("test_1".to_string()).unwrap();
+        let input_sender = proc_1.get_stream_block().get_input::<i64>(&"input".to_string());
+        assert!(input_sender.is_ok());
+        let input_sender = input_sender.unwrap().get_sender();
         let mut proc_2 = TestProcessor::new("test_2".to_string()).unwrap();
-        assert!(proc_1.get_stream_block_mut().add_input::<i64>("input".to_string()).is_ok());
-        assert!(proc_1.get_stream_block_mut().add_output::<i64>("output".to_string()).is_ok());
-        assert!(proc_2.get_stream_block_mut().add_input::<i64>("input".to_string()).is_ok());
-        assert!(proc_2.get_stream_block_mut().add_output::<i64>("output".to_string()).is_ok());
+        proc_2.get_stream_block_mut().get_output_mut(&"output".to_string()).unwrap().connect(output_sender);
         let chain = Arc::new(Mutex::new(Chain::new("test_chain".to_string())));
         let mut mode = OperativeMode::new("Mode_1".to_string(), 1);
         assert!(mode.add_chain("test_chain".to_string(), chain.clone()).is_ok());
@@ -513,14 +530,39 @@ mod test {
         assert!(stream_cntr.add_mode(1, mode).is_ok());
         assert!(stream_cntr.add_processor(&chain.clone(), "test_1".to_string(), proc_1).is_ok());
         assert!(stream_cntr.add_processor(&chain.clone(), "test_2".to_string(), proc_2).is_ok());
-        assert!(stream_cntr.connect::<i64>("test_1.output".to_string(), "test_2.input".to_string()).is_ok());
+        let ret = stream_cntr.connect::<i64>("test_1.output".to_string(), "test_2.input".to_string());
+        match ret {
+            Ok(_) => {},
+            Err(e) => {
+                eprintln!("{}", e.message);
+                assert!(false);
+            }
+        }
+        //assert!(stream_cntr.connect::<i64>("test_1.output".to_string(), "test_2.input".to_string()).is_ok());
         match stream_cntr.initialize() {
             Ok(_) => {},
             Err(e) => {eprintln!("{}", e.message); assert!(false);}
         }
+        assert!(stream_cntr.set_current_mode(1).is_ok());
         let _handle = std::thread::spawn( move || {
             let _ = StreamController::run(stream_id.unwrap());      
         });
+        std::thread::spawn(move || {
+            for i in 0..10000 {
+                std::thread::sleep(Duration::from_millis(10));
+                println!("Sending {}", i);
+                assert!(input_sender.send(i).is_ok());
+                let out = output_receiver.recv_timeout(Duration::from_millis(100));
+                assert!(out.is_ok());
+                assert_eq!(out.unwrap(), i+2);
+                println!("Reveing {}", out.unwrap());
+            }
+        });
+        
         assert!(stream_cntr.finalize().is_ok());
+    }
+    #[test]
+    fn command_test() {
+
     }
 }

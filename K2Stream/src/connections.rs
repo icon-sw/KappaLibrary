@@ -61,7 +61,7 @@ impl Connection {
     pub fn from(&self) -> &String { &self.from }
     pub fn to(&self) -> &String { &self.to }
 }
-
+#[derive(Clone)]
 pub struct ConnectionGraph {
     nodes: VecDeque<String>,
     connections: Vec<Connection>,
