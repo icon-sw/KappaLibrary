@@ -8,8 +8,9 @@ use crate::{errors::{K2Error, K2ErrorCode}, k2err, memory::{DataHeader, MemoryTr
 pub type Callback = fn (&mut dyn ProcessorTrait) -> Result<(), K2Error>;
 pub type StreamProcessorHandle = Arc<Mutex<Option<JoinHandle<Result<(),K2Error>>>>>;
 
-type StreamTable = Mutex<Vec<Arc<Mutex<StreamController>>>>;
-type MemoryTable = Mutex<HashMap<String, Arc<Mutex<Box<dyn ProcessorTrait>>>>>;
+type ProcessorType = Arc<Mutex<Box<dyn ProcessorTrait>>>;
+type StreamTable = Mutex<Vec<ProcessorType>>;
+type MemoryTable = Mutex<HashMap<String, ProcessorType>>;
 
 static STREAM_TABLE: OnceLock<StreamTable> = OnceLock::new();
 static STREAM_ID_COUNTER: OnceLock<Mutex<isize>> = OnceLock::new();
@@ -69,11 +70,17 @@ impl StreamController {
         self_instance.register_commands()?;
         let mode = OperativeMode::new("default".to_string(), 0);
         self_instance.add_mode(0, mode)?;
+        {
+            let mut processor_table = StreamController::get_processor_table().lock().map_err(|_| k2err!(K2ErrorCode::LockError,""))?;
+            processor_table.insert(name.clone(), Arc::new(Mutex::new(Box::new(self_instance))));
+        }
         dbg!("Registering stream controller in table...");
         {
             let mut stream_table = STREAM_TABLE.get_or_init(|| Mutex::new(Vec::new())).lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream table"))?;
-            stream_table.push(Arc::new(Mutex::new(self_instance)));
+            let self_instance = StreamController::get_processor(&name)?;
+            stream_table.push(self_instance.clone());
         }
+        
         dbg!("Stream controller created with id: {}", stream_id);
         dbg!("Ending StreamController create...");
         Ok(stream_id)
@@ -81,38 +88,14 @@ impl StreamController {
     fn get_stream_id(&self) -> isize {
         self.stream_id
     }
-    pub fn get_stream_by_id(id: isize) -> Result<Arc<Mutex<Self>>, K2Error> {
+    pub fn get_stream_by_id(id: isize) -> Result<ProcessorType, K2Error> {
         let stream_table = STREAM_TABLE.get_or_init(|| Mutex::new(Vec::new())).lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream table"))?;
         let stream_lock = stream_table.get((id-1) as usize)
             .ok_or(k2err!(K2ErrorCode::NotFound, format!("Stream {} not found", id)))?;
         Ok(Arc::clone(stream_lock))
     }
-    pub fn get_processor_table() -> &'static MemoryTable {
-        PROCESSOR_TABLE.get_or_init( || Mutex::new(HashMap::new()))
-    }
-    pub fn get_processor(name: &String) -> Result<Arc<Mutex<Box<dyn ProcessorTrait>>>, K2Error>
-    {
-        let proc_table = PROCESSOR_TABLE.get_or_init( || Mutex::new(HashMap::new())).lock()
-            .map_err(|_| k2err!(K2ErrorCode::LockError, "Error on PROCESSOR_TABLE locking"))?;
-        if let Some(proc) = proc_table.get(&name.clone()) {
-            Ok(proc.clone())
-        } else {
-            Err(k2err!(K2ErrorCode::NotFound, format!("Processor {} not found", name)))
-        }
-    }
-    pub fn get_processor_list() -> Result<Vec<Arc<Mutex<Box<dyn ProcessorTrait>>>>, K2Error>
-    {
-        let proc_table = PROCESSOR_TABLE.get_or_init( || Mutex::new(HashMap::new()));
-        let mut proc_list: Vec<Arc<Mutex<Box<dyn ProcessorTrait>>>> = Vec::new();
-        let proc_lock = proc_table.lock().map_err(|_|
-            k2err!(K2ErrorCode::LockError, "Error in lock of processor table"))?;
-        for proc in proc_lock.values() {
-            proc_list.push(proc.clone())
-        }
-        Ok(proc_list)
-    }
-    pub fn get_stream_by_name(_name: String) -> Result<Arc<Mutex<Self>>, K2Error> {
-        unimplemented!()
+    pub fn get_stream_by_name(name: String) -> Result<ProcessorType, K2Error> {
+        Ok(StreamController::get_processor(&name.clone())?)
     }
     pub fn register_commands(&mut self) -> Result<(), K2Error> {
         
@@ -135,9 +118,10 @@ impl StreamController {
         self.stream_handle = handle;
     }
     pub fn run(stream_id: isize) -> Result<(), K2Error> {
-        let stream = Self::get_stream_by_id(stream_id)?;
+        let stream = Self::get_stream_by_id(stream_id)?.clone();
         let handle: JoinHandle<Result<(), K2Error>> = std::thread::spawn(move || {
-            let mut stream = stream.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream"))?;
+            let mut stream = stream.lock().map_err(|_| k2err!(K2ErrorCode::LockError, ""))?;
+            let stream = stream.as_any_mut().downcast_mut::<Self>().ok_or(k2err!(K2ErrorCode::BadFormat, ""))?;
             {
                 let mut state = stream.state.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream state"))?;
                 if *state == StreamState::Uninitialized {
@@ -158,34 +142,17 @@ impl StreamController {
             }
             Ok(())
         });
-        let stream = Self::get_stream_by_id(stream_id)?;
-        stream.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream"))?.set_stream_handle(Arc::new(Mutex::new(Some(handle))));
-        Ok(())
-    }
-    pub fn connect<T: 'static + Send + Sync + Clone> (&mut self, from: String, to: String) -> Result<(), K2Error> {
-        let from_split: Vec<&str> = from.split(".").collect();
-        let to_split: Vec<&str> = to.split(".").collect();
-        let from_proc: String = from_split.first().ok_or(k2err!(K2ErrorCode::NotFound, "From processor not found"))?.to_string();
-        let to_proc: String = to_split.first().ok_or(k2err!(K2ErrorCode::NotFound, "To processor not found"))?.to_string();
-        let from_connector = from_split.get(1).ok_or(k2err!(K2ErrorCode::NotFound, "From connector not found"))?.to_string();
-        let to_connector = to_split.get(1).ok_or(k2err!(K2ErrorCode::NotFound, "To connector not found"))?.to_string();
-        let binding = StreamController::get_processor(&from_proc.clone())?;
-        let mut from_processor = binding.lock().map_err(|_|
-            k2err!(K2ErrorCode::LockError, format!("Can't get lock on processor {}", from_proc)))?;
-        let binding = StreamController::get_processor(&to_proc.clone())?;
-        let mut to_processor = binding.lock().map_err(|_|
-            k2err!(K2ErrorCode::LockError, format!("Can't get lock on processor {}", to_proc)))?;
-        
-        let from_block = from_processor.get_stream_block_mut();
-        let to_block = to_processor.get_stream_block_mut();
-        from_block.connect::<T>(&from_connector, &to_connector, to_block);
+        let stream = Self::get_stream_by_id(stream_id)?.clone();
+        let mut stream = stream.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream"))?;
+        let stream = stream.as_any_mut().downcast_mut::<Self>().ok_or(k2err!(K2ErrorCode::LockError, ""))?;
+        stream.set_stream_handle(Arc::new(Mutex::new(Some(handle))));
         Ok(())
     }
     pub fn add_mode(&mut self, id: usize, mut mode: OperativeMode) -> Result<(), K2Error> {
         if self.modes.contains_key(&id) {
             Err(k2err!(K2ErrorCode::AlreadyExists, "Mode with this ID already exists"))
         } else {
-            mode.set_stream_id(self.get_stream_id());
+            mode.set_stream_id(self.get_stream_id())?;
             self.modes.insert(id, mode);
             let mode = self.modes.get(&id).unwrap();
             dbg!(mode.get_stream_id());
@@ -210,6 +177,67 @@ impl StreamController {
         } else {
             Err(k2err!(K2ErrorCode::NotFound, "Mode not found"))
         }
+    }
+    pub fn get_processor_table() -> &'static MemoryTable {
+        PROCESSOR_TABLE.get_or_init( || Mutex::new(HashMap::new()))
+    }
+    pub fn get_processor(name: &String) -> Result<Arc<Mutex<Box<dyn ProcessorTrait>>>, K2Error>
+    {
+        let proc_table = StreamController::get_processor_table().lock()
+            .map_err(|_| k2err!(K2ErrorCode::LockError, "Error on PROCESSOR_TABLE locking"))?;
+        if let Some(proc) = proc_table.get(&name.clone()) {
+            Ok(proc.clone())
+        } else {
+            Err(k2err!(K2ErrorCode::NotFound, format!("Processor {} not found", name)))
+        }
+    }
+    pub fn get_processor_list() -> Result<Vec<Arc<Mutex<Box<dyn ProcessorTrait>>>>, K2Error>
+    {
+        let proc_table = StreamController::get_processor_table();
+        let mut proc_list: Vec<Arc<Mutex<Box<dyn ProcessorTrait>>>> = Vec::new();
+        let proc_lock = proc_table.lock().map_err(|_|
+            k2err!(K2ErrorCode::LockError, "Error in lock of processor table"))?;
+        for proc in proc_lock.values() {
+            proc_list.push(proc.clone())
+        }
+        Ok(proc_list)
+    }
+    pub fn add_processor(&mut self, chain: &ChainType, name: String, mut processor: Box<dyn ProcessorTrait>) -> Result<(), K2Error> {
+        let mut proc_table = PROCESSOR_TABLE.get_or_init(|| Mutex::new(HashMap::new())).lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream table"))?;
+        if proc_table.contains_key(&name.clone()) {
+            return Err(k2err!(K2ErrorCode::AlreadyExists, "Processor with this name already exists"));
+        }
+        processor.get_stream_block_mut().set_stream_id(self.get_stream_id());
+        match chain.lock() {
+            Ok(mut chain) => {
+                processor.get_stream_block_mut().set_task_id(chain.get_task_id());
+                (*chain).add_block(name.clone(), processor.get_stream_block())?;
+            }
+            Err(_) => {
+                return Err(k2err!(K2ErrorCode::LockError, "".to_string()));
+            }
+        }
+        proc_table.insert( name, Arc::new(Mutex::new(processor)));
+        Ok(())
+    }
+    pub fn connect<T: 'static + Send + Sync + Clone> (&mut self, from: String, to: String) -> Result<(), K2Error> {
+        let from_split: Vec<&str> = from.split(".").collect();
+        let to_split: Vec<&str> = to.split(".").collect();
+        let from_proc: String = from_split.first().ok_or(k2err!(K2ErrorCode::NotFound, "From processor not found"))?.to_string();
+        let to_proc: String = to_split.first().ok_or(k2err!(K2ErrorCode::NotFound, "To processor not found"))?.to_string();
+        let from_connector = from_split.get(1).ok_or(k2err!(K2ErrorCode::NotFound, "From connector not found"))?.to_string();
+        let to_connector = to_split.get(1).ok_or(k2err!(K2ErrorCode::NotFound, "To connector not found"))?.to_string();
+        let binding = StreamController::get_processor(&from_proc.clone())?;
+        let mut from_processor = binding.lock().map_err(|_|
+            k2err!(K2ErrorCode::LockError, format!("Can't get lock on processor {}", from_proc)))?;
+        let binding = StreamController::get_processor(&to_proc.clone())?;
+        let mut to_processor = binding.lock().map_err(|_|
+            k2err!(K2ErrorCode::LockError, format!("Can't get lock on processor {}", to_proc)))?;
+        
+        let from_block = from_processor.get_stream_block_mut();
+        let to_block = to_processor.get_stream_block_mut();
+        from_block.connect::<T>(&from_connector, &to_connector, to_block)?;
+        Ok(())
     }
     pub fn add_command(id: isize, command: String, block_name: String, callback: Callback) -> Result<(), K2Error> {
         if id < 0 || id > *STREAM_ID_COUNTER.get_or_init(|| Mutex::new(0)).lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream ID counter"))? {
@@ -241,24 +269,6 @@ impl StreamController {
         let callback = self.commands_callback.get(&command).ok_or(k2err!(K2ErrorCode::NotFound, "Callback not found"))?;
         (callback)(processor.as_mut())
     }
-    pub fn add_processor(&mut self, chain: ChainType, name: String, mut processor: Box<dyn ProcessorTrait>) -> Result<(), K2Error> {
-        let mut proc_table = PROCESSOR_TABLE.get_or_init(|| Mutex::new(HashMap::new())).lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream table"))?;
-        if proc_table.contains_key(&name.clone()) {
-            return Err(k2err!(K2ErrorCode::AlreadyExists, "Processor with this name already exists"));
-        }
-        processor.get_stream_block_mut().set_stream_id(self.get_stream_id());
-        match chain.lock() {
-            Ok(mut chain) => {
-                processor.get_stream_block_mut().set_task_id(chain.get_task_id());
-                (*chain).add_block(name.clone(), processor.get_stream_block())?;
-            }
-            Err(_) => {
-                return Err(k2err!(K2ErrorCode::LockError, "".to_string()));
-            }
-        }
-        proc_table.insert( name, Arc::new(Mutex::new(processor)));
-        Ok(())
-    }
 }
 
 impl ProcessorTrait for StreamController {
@@ -275,14 +285,16 @@ impl ProcessorTrait for StreamController {
         if *state == StreamState::Running {
             return Err(k2err!(K2ErrorCode::NotAllowed, "Stream is already running"));
         }
-        let mut proc_table = PROCESSOR_TABLE.get_or_init(|| 
-            Mutex::new(HashMap::new())).lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream table"))?;
-        for block in proc_table.values_mut() {
-            match block.lock() {
-                Ok(mut block)=> { block.initialize()?},
+        /*let proc_table = Self::get_processor_table();
+        let proc_table = proc_table.lock().map_err(|_| k2err!(K2ErrorCode::LockError,"")).unwrap();
+        let proc_list: Vec<&Arc<Mutex<Box<dyn ProcessorTrait + 'static>>>> = proc_table.iter().filter(|&(key,_)| *key != self.name).map(|(_,v)| v).collect();
+        for block in proc_list {
+            println!("Block: {}", block.lock().unwrap().name());
+            /*match block.lock() {
+                Ok(mut block)=> { /*block.initialize()? */},
                 Err(_) => {return Err(k2err!(K2ErrorCode::LockError, format!("Unable to lock processor")));}
-            };
-        }
+            };*/
+        }*/
         dbg!("Initializing modes...");
         for mode in self.modes.values_mut() {
             dbg!(mode.get_stream_id());
@@ -320,24 +332,195 @@ impl ProcessorTrait for StreamController {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use crate::modes::Chain;
 
+    use super::*;
+    #[derive(K2Memory, K2ProcessorBlock)]
+    pub struct TestProcessor {
+        name: String,
+        header: ProcessorHeader,
+        stream_block: StreamBlock,
+        state: Arc<Mutex<StreamState>>,
+    }
+
+
+    impl ProcessorTrait for TestProcessor {
+        fn new(name: String) -> ProcessorNewReturn {
+            let self_instance = Self {
+                name: name.clone(),
+                header: ProcessorHeader {
+                    proc_name: "TestProcessor".to_string(),
+                    description: "A fake processor with no functionality".to_string(),
+                    version: "0.1.0".to_string(),
+                    author: "Sofia".to_string(),
+                    email: "ms.sofia.silvestri@gmail.com".to_string(),
+                    license: "LGPLv2.0".to_string(),
+                    repository: "".to_string(),
+                },
+                stream_block: StreamBlock::new(),
+                state: Arc::new(Mutex::new(StreamState::Uninitialized)),
+            };
+            Ok(Box::new(self_instance))
+        }
+        fn initialize(&mut self ) -> Result<(), K2Error> {
+            Ok(()) // INITIALIZE_CODE
+        }
+        fn process(&mut self) -> Result<(), K2Error> {
+            Ok(()) // PROCESS_CODE
+        }
+        fn finalize(&mut self) -> Result<(), K2Error> {
+            Ok(()) // FINALIZE_CODE
+        }
+    }
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
     #[test]
     fn create_stream_controller() {
+        let _lock = TEST_MUTEX.lock();
+        let stream_id: Result<isize, K2Error> = StreamController::create("test".to_string());
+        assert!(stream_id.is_ok());
+        assert!(StreamController::new("test".to_string()).is_err());
+        let stream_cntr = StreamController::get_stream_by_id(stream_id.clone().unwrap());
+        assert!(stream_cntr.is_ok());
+        let stream_cntr = stream_cntr.unwrap();
+        let stream_cntr = stream_cntr.lock();
+        assert!(stream_cntr.is_ok());
+        let mut stream_cntr = stream_cntr.unwrap();
+        let stream_cntr = stream_cntr.as_any_mut().downcast_mut::<StreamController>();
+        assert!(stream_cntr.is_some());
+        assert_eq!(stream_cntr.unwrap().get_stream_id(), stream_id.clone().unwrap());
+    }
+    #[test]
+    fn mode_cntr() {
+        let _lock = TEST_MUTEX.lock();
         let stream_id: Result<isize, K2Error> = StreamController::create("test".to_string());
         assert!(stream_id.is_ok());
         let stream_cntr = StreamController::get_stream_by_id(stream_id.clone().unwrap());
         assert!(stream_cntr.is_ok());
-        assert_eq!(stream_cntr.unwrap().lock().unwrap().get_stream_id(), stream_id.clone().unwrap());
-    }
-    #[test]
-    fn mode_cntr() {
-        let stream_cntr = StreamController::get_stream_by_id(1);
-        assert!(stream_cntr.is_ok());
         let stream_cntr = stream_cntr.unwrap();
         let mut stream_cntr = stream_cntr.lock().unwrap();
+        let stream_cntr = stream_cntr.as_any_mut().downcast_mut::<StreamController>();
+        assert!(stream_cntr.is_some());
+        let stream_cntr = stream_cntr.unwrap();
         let mode = OperativeMode::new("modo1".to_string(), 1);
         assert!(stream_cntr.add_mode(1, mode).is_ok());
-
+        let mode = OperativeMode::new("modo2".to_string(), 1);
+        assert!(stream_cntr.add_mode(1, mode).is_err());
+        let mode = stream_cntr.get_mode_mut(&1);
+        assert!(mode.is_ok());
+        let mode = mode.unwrap();
+        assert!(mode.add_chain("name".to_string(), Arc::new(Mutex::new(Chain::new("name".to_string())))).is_ok());
+        let mode = stream_cntr.get_mode(&1);
+        assert!(mode.is_ok());
+        let mode = mode.unwrap();
+        assert!(mode.get_chain(&"name".to_string()).is_ok());
+        assert!(stream_cntr.set_current_mode(1).is_ok());
+        let mode = stream_cntr.get_mode(&2);
+        assert!(mode.is_err());
+        assert!(stream_cntr.set_current_mode(2).is_err());
+    }
+    #[test]
+    fn processor_cntr() {
+        let _lock = TEST_MUTEX.lock();
+        StreamController::get_processor_table().lock().unwrap().clear();
+        dbg!("Create proc");
+        let proc = TestProcessor::new("test".to_string());
+        assert!(proc.is_ok());
+        dbg!("Create chain");
+        let chain = Arc::new(Mutex::new(Chain::new("test".to_string())));
+        dbg!("Create mode");
+        let mut mode = OperativeMode::new("test".to_string(),1);
+        dbg!("Append chain to mode");
+        assert!(mode.add_chain("test".to_string(), chain.clone()).is_ok());
+        dbg!("Create stream controller");
+        let stream_id: Result<isize, K2Error> = StreamController::create("test".to_string());
+        assert!(stream_id.is_ok());
+        dbg!("Get stream controller arc");
+        let stream_cntr = StreamController::get_stream_by_id(stream_id.clone().unwrap());
+        assert!(stream_cntr.is_ok());
+        let stream_cntr_arc = stream_cntr.unwrap();
+        {
+            dbg!("Add mode to stream controller");
+            let mut stream_cntr = stream_cntr_arc.lock().unwrap();
+            let stream_cntr = stream_cntr.as_any_mut().downcast_mut::<StreamController>();
+            assert!(stream_cntr.is_some());
+            assert!(stream_cntr.unwrap().add_mode(1, mode).is_ok());
+        }
+        {
+            dbg!("Add processor to stream controller");
+            let mut stream_cntr = stream_cntr_arc.lock().unwrap();
+            let stream_cntr = stream_cntr.as_any_mut().downcast_mut::<StreamController>();
+            assert!(stream_cntr.is_some());
+            let ret = stream_cntr.unwrap().add_processor(&chain.clone(), "test".to_string(), proc.unwrap());
+            match ret {
+                Ok(_) => {},
+                Err(e) => {eprintln!("{}", e.message);}
+            }
+        }
+        dbg!("Get processor from stream controller");
+        let proc = StreamController::get_processor(&"test".to_string());
+        assert!(proc.is_ok());
+        let proc = proc.unwrap();
+        {
+            let mut proc = proc.lock().unwrap();
+            assert_eq!(proc.name(), &"test".to_string());
+            dbg!("Adding input");
+            assert!(proc.get_stream_block_mut().add_input::<String>("test".to_string()).is_ok());
+        }
+        {
+        let proc = StreamController::get_processor(&"test".to_string());
+        assert!(proc.is_ok());
+        let proc = proc.unwrap();
+        let proc = proc.lock().unwrap();
+        dbg!("Verifying input");
+        assert!(proc.get_stream_block().get_input::<String>(&"test".to_string()).is_ok());
+        }
+        dbg!("Get error processor to stream controller");
+        let proc = StreamController::get_processor(&"test_1".to_string());
+        assert!(proc.is_err());
+        let proc = TestProcessor::new("test".to_string());
+        assert!(proc.is_ok());
+        {
+            dbg!("Add error processor to stream controller");
+            let mut stream_cntr = stream_cntr_arc.lock().unwrap();
+            let stream_cntr = stream_cntr.as_any_mut().downcast_mut::<StreamController>().unwrap();
+            assert!(stream_cntr.add_processor(&chain.clone(), "test".to_string(), proc.unwrap()).is_err());
+            dbg!("Add processor to stream controller");
+            let proc = TestProcessor::new("test_1".to_string());
+            assert!(stream_cntr.add_processor(&chain.clone(), "test_a".to_string(), proc.unwrap()).is_ok());
+        }
+        let proc_list = StreamController::get_processor_list();
+        assert!(proc_list.is_ok());
+        assert_eq!(proc_list.unwrap().len(), 2);
+    }
+    #[test]
+    fn operation_mode() {
+        let _lock = TEST_MUTEX.lock();
+        StreamController::get_processor_table().lock().unwrap().clear();
+        let mut proc_1 = TestProcessor::new("test_1".to_string()).unwrap();
+        let mut proc_2 = TestProcessor::new("test_2".to_string()).unwrap();
+        assert!(proc_1.get_stream_block_mut().add_input::<i64>("input".to_string()).is_ok());
+        assert!(proc_1.get_stream_block_mut().add_output::<i64>("output".to_string()).is_ok());
+        assert!(proc_2.get_stream_block_mut().add_input::<i64>("input".to_string()).is_ok());
+        assert!(proc_2.get_stream_block_mut().add_output::<i64>("output".to_string()).is_ok());
+        let chain = Arc::new(Mutex::new(Chain::new("test_chain".to_string())));
+        let mut mode = OperativeMode::new("Mode_1".to_string(), 1);
+        assert!(mode.add_chain("test_chain".to_string(), chain.clone()).is_ok());
+        let stream_id = StreamController::create("test_stream".to_string());
+        let stream_cntr = StreamController::get_stream_by_id(stream_id.clone().unwrap());
+        let stream_cntr = stream_cntr.unwrap();
+        let mut stream_cntr = stream_cntr.lock().unwrap();
+        let stream_cntr = stream_cntr.as_any_mut().downcast_mut::<StreamController>().unwrap();
+        assert!(stream_cntr.add_mode(1, mode).is_ok());
+        assert!(stream_cntr.add_processor(&chain.clone(), "test_1".to_string(), proc_1).is_ok());
+        assert!(stream_cntr.add_processor(&chain.clone(), "test_2".to_string(), proc_2).is_ok());
+        assert!(stream_cntr.connect::<i64>("test_1.output".to_string(), "test_2.input".to_string()).is_ok());
+        match stream_cntr.initialize() {
+            Ok(_) => {},
+            Err(e) => {eprintln!("{}", e.message); assert!(false);}
+        }
+        let _handle = std::thread::spawn( move || {
+            let _ = StreamController::run(stream_id.unwrap());      
+        });
+        assert!(stream_cntr.finalize().is_ok());
     }
 }

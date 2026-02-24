@@ -153,8 +153,12 @@ impl OperativeMode {
     pub fn get_stream_id(&self) -> isize {
         self.stream_id
     }
-    pub fn set_stream_id(&mut self, stream_id: isize) {
+    pub fn set_stream_id(&mut self, stream_id: isize) -> Result<(), K2Error>{
         self.stream_id = stream_id;
+        for chain in self.chains.values() {
+            chain.lock().map_err(|_| k2err!(K2ErrorCode::LockError, ""))?.set_stream_id(stream_id);
+        }
+        Ok(())
     }
     pub fn add_chain(&mut self, name: String, chain: Arc<Mutex<Chain>>) -> Result<(), K2Error> {
         if self.chains.contains_key(&name) {
@@ -186,9 +190,7 @@ impl OperativeMode {
         for chain in self.chains.values_mut() {
             dbg!("Chain init");
             let mut chain = chain.lock().map_err(|_| k2err!( K2ErrorCode::LockError, "Failed to lock chain"))?;
-            if chain.initialize().is_err() {
-                return Err(k2err!( K2ErrorCode::ProcessError, "Failed to initialize chain"));
-            }
+            chain.initialize()?;
             dbg!("Chain init end");
         }
         Ok(())
