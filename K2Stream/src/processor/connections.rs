@@ -1,7 +1,7 @@
 use std::{collections::{VecDeque, vec_deque::Iter}, sync::{Arc, Mutex, mpsc::{Receiver, SyncSender}}};
 use memory_macro::K2Memory;
 
-use crate::{errors::{K2Error, K2ErrorCode}, k2err, memory::{DataHeader, MemoryTrait}};
+use crate::{errors::{K2Error, K2ErrorCode}, k2err, processor::memory::{DataHeader, MemoryTrait}};
 
 #[derive(K2Memory)]
 pub struct Input<T: 'static + Send + Sync> {

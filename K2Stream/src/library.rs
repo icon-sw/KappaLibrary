@@ -3,7 +3,7 @@ use std::{collections::HashMap, ffi::{CStr, c_char, c_void}, ptr};
 use libloading::{Library, Symbol};
 use serde::{Deserialize, Serialize};
 
-use crate::{errors::{K2Error, K2ErrorCode}, processors::ProcessorTrait};
+use crate::{errors::{K2Error, K2ErrorCode}, processor::processors::ProcessorTrait};
 
 pub type ProcessorNew = fn(name: String) -> Result<Box<dyn ProcessorTrait>, K2Error>;
 
@@ -125,14 +125,13 @@ impl LibraryHandler {
         // e ottenere la struttura LibraryStructFFI, poi convertirla in LibraryStruct
         let library: Library = unsafe { libloading::Library::new(path).map_err(|_| K2Error { code: K2ErrorCode::NotFound, message: "Failed to load library".into() })? };
 
-        let module_info: Symbol<*mut LibraryStructFFI>;
-        match unsafe { library.get(b"MODULE\0") } {
-            Ok(module) => {module_info = module;}
+        let module_info: Symbol<*mut LibraryStructFFI> =  match unsafe { library.get(b"MODULE\0") } {
+            Ok(module) => {module},
             Err(_) => {
                 eprintln!("Unable to find");
                 return Err(K2Error { code: K2ErrorCode::NotFound, message: "Failed to find module in library".into() });
             }
-        }
+        };
         let ptr = *module_info;
 
         let module: LibraryStruct = unsafe {

@@ -3,7 +3,7 @@ use std::fmt;
 use memory_macro::K2Memory;
 use num_traits::{Float, PrimInt};
 
-use crate::{errors::{K2Error, K2ErrorCode}, k2err, memory::{DataHeader, DataTrait, MemoryTrait}};
+use crate::{errors::{K2Error, K2ErrorCode}, k2err, processor::memory::{DataHeader, DataTrait, MemoryTrait}};
 
 pub enum ParameterRangeType {
     Range,

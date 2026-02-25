@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard, OnceLock}, thread
 use processor_macro::K2ProcessorBlock;
 use memory_macro::K2Memory;
 
-use crate::{errors::{K2Error, K2ErrorCode}, k2err, memory::{DataHeader, MemoryTrait}, modes::{ChainType, OperativeMode}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
+use crate::{errors::{K2Error, K2ErrorCode}, k2err, processor::memory::{DataHeader, MemoryTrait}, streamer::modes::{ChainType, OperativeMode}, processor::processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
 
 pub type Callback = fn (&mut dyn ProcessorTrait) -> Result<(), K2Error>;
 pub type StreamProcessorHandle = Arc<Mutex<Option<JoinHandle<Result<(),K2Error>>>>>;
@@ -335,7 +335,7 @@ impl ProcessorTrait for StreamController {
 mod test {
     use std::sync::mpsc;
 
-    use crate::modes::Chain;
+    use crate::streamer::modes::Chain;
 
     use super::*;
     #[derive(K2Memory, K2ProcessorBlock)]

@@ -1,9 +1,5 @@
-pub mod memory;
-pub mod connections;
-pub mod parameters;
-pub mod states;
-pub mod processors;
+pub mod processor;
 pub mod errors;
-pub mod modes;
-pub mod stream_controller;
+pub mod streamer;
 pub mod library;
+pub mod log;

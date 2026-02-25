@@ -1,6 +1,6 @@
 use memory_macro::K2Memory;
 
-use crate::{errors::{K2Error, K2ErrorCode}, k2err, memory::{DataHeader, DataTrait, MemoryTrait}};
+use crate::{errors::{K2Error, K2ErrorCode}, k2err, processor::memory::{DataHeader, DataTrait, MemoryTrait}};
 
 #[derive(Clone, K2Memory)]
 pub struct State<T: 'static + Sync + Send> {

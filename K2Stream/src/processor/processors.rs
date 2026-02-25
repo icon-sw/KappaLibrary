@@ -2,13 +2,13 @@ use std::any::Any;
 use std::{collections::HashMap, sync::MutexGuard};
 use serde::{Deserialize, Serialize};
 
-use crate::connections::{Input, Output};
+use crate::processor::connections::{Input, Output};
 use crate::errors::{K2Error, K2ErrorCode};
 use crate::k2err;
-use crate::memory::{DataHeader, Memory, MemoryTrait};
-use crate::parameters::{Parameter, ParameterType};
-use crate::states::State;
-use crate::stream_controller::{Callback, StreamController};
+use crate::processor::memory::{DataHeader, Memory, MemoryTrait};
+use crate::processor::parameters::{Parameter, ParameterType};
+use crate::processor::states::State;
+use crate::streamer::stream_controller::{Callback, StreamController};
 
 pub type ProcessorNewReturn = Result<Box<dyn ProcessorTrait>, K2Error>;
 
@@ -251,7 +251,7 @@ pub struct ProcessorHeader {
 
 #[cfg(test)]
 mod test {
-    use crate::memory::DataTrait;
+    use crate::processor::memory::DataTrait;
 
     use super::*;
 

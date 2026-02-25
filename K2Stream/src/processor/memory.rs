@@ -78,7 +78,7 @@ impl Memory {
 
 #[cfg(test)]
 mod tests {
-    use crate::parameters::{Parameter, ParameterType};
+    use crate::processor::parameters::{Parameter, ParameterType};
 
     use super::*;
     

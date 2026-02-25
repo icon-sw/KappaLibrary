@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::{Arc, Mutex, OnceLock}, thread::JoinHandle};
 
-use crate::{connections::ConnectionGraph, errors::{K2Error, K2ErrorCode}, k2err, processors::{StreamBlock, StreamType}, stream_controller::StreamController};
+use crate::{processor::connections::ConnectionGraph, errors::{K2Error, K2ErrorCode}, k2err, processor::processors::{StreamBlock, StreamType}, streamer::stream_controller::StreamController};
 
 static TASK_ID_COUNTER: OnceLock<Mutex<isize>> = OnceLock::new();
 
