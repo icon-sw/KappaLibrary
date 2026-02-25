@@ -6,7 +6,7 @@ pub mod ast;
 
 pub type Token = Vec<String>;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct K2Object {
     pub name: String,
     pub object_type: String,
@@ -15,7 +15,7 @@ pub struct K2Object {
     pub properties: HashMap<String, String>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct K2ReturnStruct {
     pub success: bool,
     pub command: String,

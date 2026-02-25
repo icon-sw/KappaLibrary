@@ -1,0 +1,21 @@
+new library test_library.test
+new processor processor
+new input processor.input
+new input library.processor.input 
+new output library.processor.output_1
+new parameter test_library..parameter 10.0
+new state .processor.state f64 
+new application test$#
+new stream test.stream.stream
+new block test.stream.processor processor
+new chain test.chain
+new mode test.mode
+new command test.processor.
+new   banana
+add test.processor chain 4
+delete test.processor 1
+set test.processor.parameter f64 0
+connect test.input_1 test.output_1
+disconnect test.input_1 test.output_1
+exec .command
+hello
