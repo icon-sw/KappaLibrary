@@ -1,9 +1,9 @@
-use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard}};
+use std::{collections::HashMap, fmt::format, sync::{Arc, Mutex, MutexGuard}};
 
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
-use k2_stream::{errors::{K2Error, K2ErrorCode}, k2err, memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
-use crate::{K2Object, K2ReturnStruct, coder::ProcessorCodePart};
+use k2_stream::{errors::{K2Error, K2ErrorCode}, k2err, processor::memory::{DataHeader, MemoryTrait}, processor::processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
+use crate::{K2Object, K2ReturnStruct, coder::ProcessorCodePart, parser::Parser};
 
 type AstReturn = Result<K2ReturnStruct, String>;
 type AstCallback = fn(&mut AstProcessor, &K2ReturnStruct) -> AstReturn;
@@ -136,11 +136,8 @@ impl AstProcessor {
                 }
                 processing_object.properties.insert("path".to_string(), k2_parse_struct.tokens[2].to_string());
             }
-            "chain" | "mode" => {
-                let split_name: Vec<String> = object_name.split(".").map(|s| s.to_string()).collect();
-                if split_name.len() != 2 {
-                    return Err("Invalid object name format for chain/mode".to_string());
-                }
+            "streaming_control" => {
+                let split_name = Parser::check_name(object_name)?;
                 match self.objects.get_mut(&split_name[0]) {
                     Some(parent_object) => {
                         if parent_object.object_type != "application" {
@@ -154,21 +151,41 @@ impl AstProcessor {
                 }
                 processing_object.parent.push(split_name[0].to_string());
             }
-            "stream" => {
+            "chain" | "mode" => {
                 let split_name: Vec<String> = object_name.split(".").map(|s| s.to_string()).collect();
-                if split_name.len() != 2 {
-                    return Err("Invalid object name format for stream".to_string());
+                if split_name.len() != 3 {
+                    return Err("Invalid object name format for chain/mode".to_string());
+                }
+                let parent_name = format!("{}.{}", split_name[0], split_name[1]);
+                match self.objects.get_mut(&parent_name) {
+                    Some(parent_object) => {
+                        if parent_object.object_type != "streaming_control" {
+                            return Err("Parent object must be a streaming_control".to_string());
+                        }
+                        parent_object.children.push(object_name.to_string());
+                    },
+                    None => {
+                        return Err("Parent object does not exist".to_string());
+                    }
+                }
+                processing_object.parent.push(parent_name.to_string());
+            }
+            "block" => {
+                let split_name: Vec<String> = object_name.split(".").map(|s| s.to_string()).collect();
+                if split_name.len() != 3 {
+                    return Err("Invalid object name format for block".to_string());
                 }
                 if k2_parse_struct.tokens.len() < 4 {
-                    return Err("Invalid k2_parse_struct.tokens length for stream".to_string());
+                    return Err("Invalid k2_parse_struct.tokens length for block".to_string());
                 }
-                if self.objects.get(&split_name[0]).is_none() {
+                let parent_name = format!("{}.{}", split_name[0], split_name[1]);
+                if self.objects.get(&parent_name.clone()).is_none() {
                     return Err("Parent object does not exist".to_string());
                 }
-                match self.objects.get_mut(&split_name[0]) {
+                match self.objects.get_mut(&parent_name.clone()) {
                     Some(parent_object) => {
-                        if parent_object.object_type != "application" {
-                            return Err("Parent object must be an application".to_string());
+                        if parent_object.object_type != "streaming_control" {
+                            return Err("Parent object must be a streaming_control".to_string());
                         }
 
                         parent_object.children.push(object_name.to_string());
@@ -177,7 +194,7 @@ impl AstProcessor {
                         return Err("Parent object does not exist".to_string());
                     }
                 }
-                processing_object.parent.push(split_name[0].to_string());
+                processing_object.parent.push(parent_name.to_string());
                 let processor_type = &k2_parse_struct.tokens[3];
                 if processor_type.is_empty() {
                     return Err("Processor cannot be empty".to_string());
@@ -186,7 +203,7 @@ impl AstProcessor {
                 processing_object.properties.insert("connection".to_string(), "0".to_string());
             }
             "command" => {
-                if !object_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                if !object_name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.' ) {
                     return Err("Invalid object name".to_string());
                 }
             },
@@ -224,7 +241,7 @@ impl AstProcessor {
                 }
             },
             "chain" => {
-                if child_object.object_type != "stream" {
+                if child_object.object_type != "block" {
                     return Err("Child object must be a processor".to_string());
                 }
             },
@@ -278,30 +295,35 @@ impl AstProcessor {
         })
     }
     pub fn parse_set(&mut self, k2_parse_struct: &K2ReturnStruct) -> AstReturn {
-        if k2_parse_struct.tokens.len() < 4 {
+        if k2_parse_struct.tokens.len() < 3 {
             return Err("Invalid k2_parse_struct.tokens length".to_string());
         }
         let object_name = &k2_parse_struct.tokens[1];
-        if self.objects.get(object_name).is_none() {
-            let split_name: Vec<String> = object_name.split(".").map(|s| s.to_string()).collect();
-            if split_name.len() == 3 {
-                let parent_name = format!("{}.{}", split_name[0], split_name[1]);
-                if let Some(parent_object) = self.objects.get(&parent_name) {
-                    if parent_object.object_type == "processor" {
-                        let code_part = &split_name[2];
-                        ProcessorCodePart::try_from(code_part.clone()).map_err(|_| "Invalid code part".to_string())?;
-                    } else {
-                        return Err("Object does not exist".to_string());
+        let property_name;
+        let property_value;
+        if let Some(object) = self.objects.get(object_name) {
+            match object.object_type.as_str() {
+                "parameter" | "state" => {
+                    if k2_parse_struct.tokens.len() != 3 {
+                        return Err("Invalid k2_parse_struct.tokens length".to_string());
                     }
-                } else {
-                    return Err("Object does not exist".to_string());
+                    property_name = "value".to_string();
+                    property_value = k2_parse_struct.tokens[2].clone(); 
                 }
-            } else {
-                return Err("Object does not exist".to_string());
+                "processor" => {
+                    if k2_parse_struct.tokens.len() != 4 {
+                        return Err("Invalid k2_parse_struct.tokens length".to_string());
+                    }
+                    let code_part = k2_parse_struct.tokens[2].clone();
+                    ProcessorCodePart::try_from(code_part.clone()).map_err(|_| "Invalid code part".to_string())?;
+                    property_name = code_part;
+                    property_value = k2_parse_struct.tokens[3].clone();
+                }
+                _ => {return Err("Object not settable".to_string());}
             }
+        } else {
+            return Err("Object {} doesn't exist".to_string());
         }
-        let property_name = &k2_parse_struct.tokens[2];
-        let property_value = k2_parse_struct.tokens[3..].join(" ");
         let object = self.objects.get_mut(object_name).unwrap();
         object.properties.insert(property_name.to_string(), property_value);
         Ok(
@@ -411,12 +433,12 @@ impl AstProcessor {
                 Ok(res) => {
                     response = res.clone();
                 }
-                Err(_) => {
+                Err(e) => {
                     response = K2ReturnStruct {
                         success: false,
                         command: k2_parse_struct.command.clone(),
                         tokens: k2_parse_struct.tokens.clone(),
-                        message: format!("Error"),
+                        message: e,
                         data: None,
                     };
                 }
@@ -426,7 +448,7 @@ impl AstProcessor {
                 success: false,
                 command: k2_parse_struct.command.clone(),
                 tokens: k2_parse_struct.tokens.clone(),
-                message: format!("Unknown"),
+                message: format!("Unknown command"),
                 data: None,
             };
         }
@@ -485,5 +507,78 @@ impl ProcessorTrait for AstProcessor {
             .map_err(|_| k2err!(K2ErrorCode::LockError, "Unable to update status"))? 
                 = StreamState::Waiting;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test
+{
+    use std::{fs::File, io::{BufRead, BufReader}, sync::mpsc};
+
+    use crate::ast;
+
+    use super::*;
+    #[test]
+    fn ast_new_test() {
+        let mut ast_proc = AstProcessor::new("test_ast".to_string());
+        assert!(ast_proc.is_ok());
+        let mut ast_proc = ast_proc.unwrap();
+        let ast_proc = ast_proc.as_any_mut().downcast_mut::<AstProcessor>().unwrap();
+
+        let ( sender,  receiver) = mpsc::sync_channel::<K2ReturnStruct>(10);
+        let response_port = ast_proc.get_stream_block_mut().get_output_mut::<K2ReturnStruct>(&"response".to_string());
+        assert!(response_port.is_ok());
+        let response_port = response_port.unwrap();
+        response_port.connect(sender);
+
+        let command_port = ast_proc.get_stream_block_mut().get_input::<K2ReturnStruct>(&"command".to_string());
+        assert!(command_port.is_ok());
+        let command_port = command_port.clone().unwrap().get_sender().clone();
+
+        assert!(ast_proc.initialize().is_ok());
+        let file = File::open("test/ok_ast_command_sequence").map_err(|_| k2err!(K2ErrorCode::NotFound,""));
+        let reader = BufReader::new(file.unwrap());
+        for line in reader.lines() {
+            assert!(line.is_ok());
+            let line = line.unwrap();
+            dbg!(line.clone());
+            if line.is_empty() {
+                continue;
+            }
+            let tokens: Vec<String> = line.split_whitespace().map(|s| s.to_string()).collect();
+            let message = K2ReturnStruct {
+                success: true,
+                command: line.clone(),
+                message: "Ok".to_string(),
+                tokens: tokens,
+                data: None,
+            };
+            assert!(command_port.send(message).is_ok());
+            assert!(ast_proc.process().is_ok());
+            let response = receiver.recv();
+            assert!(response.is_ok());
+            let response = response.unwrap();
+            dbg!(response.clone());
+            assert!(response.success);
+        }
+    }
+    #[test]
+    fn ast_add_test() {
+
+    }
+    #[test]
+    fn ast_delete_test() {
+
+    }
+    #[test]
+    fn ast_set_test() {
+
+    }
+    #[test]
+    fn ast_connect_disconnect_test() {
+    }
+    #[test]
+    fn ast_exec_test() {
+
     }
 }

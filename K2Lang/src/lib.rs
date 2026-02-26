@@ -3,6 +3,7 @@ use std::collections::HashMap;
 pub mod parser;
 pub mod coder;
 pub mod ast;
+pub mod syntax_tree;
 
 pub type Token = Vec<String>;
 
@@ -22,4 +23,16 @@ pub struct K2ReturnStruct {
     pub tokens: Token,
     pub message: String,
     pub data: Option<Vec<K2Object>>,
+}
+
+impl K2ReturnStruct {
+    pub fn new() -> Self {
+        Self {
+            success: true,
+            command: "".to_string(),
+            tokens: Vec::new(),
+            message: "".to_string(),
+            data: None,
+        }
+    }
 }

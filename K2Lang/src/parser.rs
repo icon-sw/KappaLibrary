@@ -31,8 +31,8 @@ impl Parser {
         }
         Ok(split_name)
     }
-    pub fn split_commands(&self, command: &String) -> Vec<Vec<String>> {
-        let lines = command.lines();
+    pub fn split_commands(command: &String) -> Vec<Vec<String>> {
+        let lines: std::str::Lines<'_> = command.lines();
         let mut commands: Vec<String> = Vec::new();
         for line in lines {
             let mut line_commands = line.split(";").map(|s| s.to_string()).collect();
@@ -291,7 +291,7 @@ impl ProcessorTrait for Parser {
         *self.state.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Unable to set state"))? = StreamState::Running;
         let command_input = self.stream_block.get_input::<String>(&"command".to_string())?;
         let command_str = command_input.receive()?;
-        let tokenized_commands = self.split_commands(&command_str);
+        let tokenized_commands = Self::split_commands(&command_str);
         for cmd in &tokenized_commands {
             if cmd.is_empty() {
                 continue;

@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt, sync::{Arc, Mutex, MutexGuard}};
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
 
-use k2_stream::{errors::{K2Error, K2ErrorCode}, k2err, memory::{DataHeader, MemoryTrait}, parameter::ParameterValueType, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
+use k2_stream::{errors::{K2Error, K2ErrorCode}, k2err, processor::memory::{DataHeader, MemoryTrait}, processor::processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
 
 use crate::K2ReturnStruct;
 
@@ -184,15 +184,7 @@ impl Coder {
                             "static" | "dynamic" => {}
                             _ => return Err("Parameter kind must be either static or dynamic".to_string()),
                         }
-                        let parameter_value_type;
-                        match data_type.as_str() {
-                            "u8" | "u16" | "u32" | "u64" | "u128" |
-                            "i8" | "i16" | "i32" | "i64" | "i128" |
-                            "bool" => {parameter_value_type = ParameterValueType::INTEGER}
-                            "f32" | "f64" => {parameter_value_type = ParameterValueType::FLOAT}
-                            _ => return Err("Unsupported data type for parameter".to_string()),
-                        }
-                        let declaration = format!("ret.get_stream_block_mut().add_parameter::<{}>({}, \"{}\", {});", data_type, parameter_value_type, data_name, parameter_type);
+                        let declaration = format!("ret.get_stream_block_mut().add_parameter::<{}>(\"{}\", {});", data_type, data_name, parameter_type);
                         let initialization = format!("ret.get_stream_block_mut().set_parameter::<{}>(\"{}\", {});", data_type, data_name, value);
                         coder_object.code_parts.insert(ProcessorCodePart::K2MemberCreation, 
                             format!("{}\n{}", declaration, initialization));
@@ -422,5 +414,15 @@ impl ProcessorTrait for Coder {
     fn finalize(&mut self) -> Result<(), K2Error> {
         *self.state.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Unable to update status"))? = StreamState::Waiting;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test 
+{
+    use super::*;
+    #[test]
+    fn test() {
+        
     }
 }
