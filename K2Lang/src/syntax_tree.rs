@@ -129,7 +129,7 @@ impl SyntaxTreeProcessor {
                 if parent_type == &parent_object.object_type {
                     Ok(parent_name)
                 } else {
-                    Err(format!("{} type cannot be created inside {}", parent_type.to_string(), object_type))
+                    Err(format!("{} type cannot be created inside {}", object_type, parent_object.object_type))
                 }
             } else {
                 Err(format!("Unkonw type {}", object_type))
@@ -311,34 +311,17 @@ impl SyntaxTreeProcessor {
             return Err(format!("Object {} not present", relation_name));
         }
         let object = self.objects.get(&object_name).unwrap().clone();
-        let mut relation_object = self.objects.get(&relation_name).unwrap().clone();
+        let relation_object = self.objects.get(&relation_name).unwrap().clone();
         let relationship_table = ADD_RELATIONSHIP.get().ok_or("SyntaxTree not initialized".to_string())?;
         if let Some(parent_type) = relationship_table.get(&object.object_type) {
             if &relation_object.object_type == parent_type {
                 self.add_children(relation_name.clone(), object_name.clone())?;
-                if object.object_type == "block" && parent_type == "mode" {
-                    // Take all block children
-                    let block_name = object.name.split('.').last().ok_or("err")?.to_string();
-                    let mode_name = relation_name.clone();
-                    let children_list = object.children.clone();
-                    for child_name in children_list {
-                        let mut child_obj = self.objects.get_mut(&child_name).ok_or("err")?.clone();
-                        child_obj.parent = Vec::new();
-                        child_obj.parent.push(mode_name.clone());
-                        let child_name = child_name.split('.').last().ok_or("err")?.to_string();
-                        child_obj.name = format!("{}.{}.{}",mode_name, block_name, child_name);
-                        relation_object.children.push(child_obj.name.clone());
-                        self.objects.insert(child_obj.name.clone(), child_obj);
-                    }
-                    self.objects.insert(mode_name, relation_object.clone());
-                }
             } else {
                 return Err(format!("{} cannot be parent of {}", relation_object.object_type, object.object_type));
             }
         } else {
             return Err(format!("{} cannot be had to anything", object.object_type));
         }
-        
         Ok(
             K2ReturnStruct {
                 success: true,
@@ -388,15 +371,31 @@ impl SyntaxTreeProcessor {
             return Err("".to_string());
         }
         let object_name = k2_parse_struct.tokens[1].clone();
-        let object = self.objects.get_mut(&object_name).ok_or("Object not found".to_string())?;
+        let mut object = self.objects.get(&object_name).ok_or("Object not found".to_string())?.clone();
         match object.object_type.as_str() {
             "parameter" | "state" => {
-                object.properties.insert("value".to_string(), k2_parse_struct.tokens[2].clone());
+                match k2_parse_struct.tokens.len() {
+                    3 => { // Global set
+                        object.properties.insert("value".to_string(), k2_parse_struct.tokens[2].clone());
+                    },
+                    4 => { // Mode set
+                        let mode_selected = k2_parse_struct.tokens[2].clone();
+                        if !self.valid_object(mode_selected.clone())? {
+                            return Err(format!("Mode {} not exist", mode_selected));
+                        }
+                        let mode_obj = self.objects.get_mut(&mode_selected).ok_or("Object not found".to_string())?;
+                        mode_obj.properties.insert(object_name, k2_parse_struct.tokens[3].clone());
+                    },
+                    _ => {return Err("Wrong command length".to_string());},
+                }
             },
              "processor" => {
-                let code_part = object_name.split('.').last().ok_or("err")?.to_string();
+                if k2_parse_struct.tokens.len() != 4 {
+                    return Err("Wrong command length".to_string());
+                }
+                let code_part = k2_parse_struct.tokens[2].clone();
                 ProcessorCodePart::try_from(code_part.clone()).map_err(|_| "Invalid code part".to_string())?;    
-                object.properties.insert(code_part, k2_parse_struct.tokens[2].clone());
+                object.properties.insert(code_part, k2_parse_struct.tokens[3].clone());
             }
             _ => {return Err(format!("Type {} is not settable", object.object_type));}
         }
@@ -427,13 +426,23 @@ impl SyntaxTreeProcessor {
         if source_obj.object_type != "output" && target_obj.object_type != "input" {
             return Err("Connection invalid type.".to_string());
         }
-        let source_parent_name = self.valid_parent(source_name.clone(), source_obj.object_type)?;
-        let source_parent_obj = self.objects.get_mut(&source_parent_name).unwrap().clone();
+        let (source_parent_name, _) = source_name.rsplit_once('.').ok_or("Split err")?;
+        let source_parent_name = source_parent_name.to_string();
+        let mut source_parent_obj = self.objects.get_mut(&source_parent_name.clone()).unwrap().clone();
+        if source_parent_obj.object_type != "block" {
+            return Err("Invalid parent type for connection".to_string());
+        }
+        let (target_parent_name, _) = target_name.rsplit_once('.').ok_or("Split err")?;
+        let target_parent_name = target_parent_name.to_string();
+        let target_parent_obj = self.objects.get(&target_parent_name.clone()).unwrap().clone();
+        if target_parent_obj.object_type != "block" {
+            return Err("Invalid parent type for connection".to_string());
+        }
+        
         let connection_number = source_parent_obj.properties.get("connection").unwrap_or(&"0".to_string()).parse::<u32>().unwrap_or(0) + 1;
-        let source_parent_obj = self.objects.get_mut(&source_parent_name).unwrap();
         source_parent_obj.properties.insert(format!("connection_{}", connection_number), format!("{}-{}", source_name, target_name));
         source_parent_obj.properties.insert("connection".to_string(), connection_number.to_string());
-        
+        self.objects.insert(source_parent_name, source_parent_obj.clone());
         Ok(
             K2ReturnStruct {
                 success: true,
@@ -461,8 +470,18 @@ impl SyntaxTreeProcessor {
         if source_obj.object_type != "output" && target_obj.object_type != "input" {
             return Err("Connection invalid type.".to_string());
         }
-        let source_parent_name = self.valid_parent(source_name.clone(), source_obj.object_type)?;
-        let mut source_parent_obj = self.objects.get_mut(&source_parent_name).unwrap().clone();
+        let (source_parent_name, _) = source_name.rsplit_once('.').ok_or("Split err")?;
+        let source_parent_name = source_parent_name.to_string();
+        let mut source_parent_obj = self.objects.get_mut(&source_parent_name.clone()).unwrap().clone();
+        if source_parent_obj.object_type != "block" {
+            return Err("Invalid parent type for connection".to_string());
+        }
+        let (target_parent_name, _) = target_name.rsplit_once('.').ok_or("Split err")?;
+        let target_parent_name = target_parent_name.to_string();
+        let target_parent_obj = self.objects.get(&target_parent_name.clone()).unwrap().clone();
+        if target_parent_obj.object_type != "block" {
+            return Err("Invalid parent type for connection".to_string());
+        }
         let properties = source_parent_obj.properties.clone();
         if let Some(connection) = properties.iter().find(|(_, v)| v == &&format!("{}-{}", source_name, target_name)) {
             source_parent_obj.properties.remove(connection.0);
@@ -527,23 +546,23 @@ mod test
     use super::*;
     #[test]
     fn syntax_tree_new_test() {
-        let mut ast_proc = SyntaxTreeProcessor::new("test_ast".to_string());
-        assert!(ast_proc.is_ok());
-        let mut ast_proc = ast_proc.unwrap();
-        let ast_proc = ast_proc.as_any_mut().downcast_mut::<SyntaxTreeProcessor>().unwrap();
+        let syntax_tree_proc = SyntaxTreeProcessor::new("test_ast".to_string());
+        assert!(syntax_tree_proc.is_ok());
+        let mut syntax_tree_proc = syntax_tree_proc.unwrap();
+        let syntax_tree_proc = syntax_tree_proc.as_any_mut().downcast_mut::<SyntaxTreeProcessor>().unwrap();
 
         let ( sender,  receiver) = mpsc::sync_channel::<K2ReturnStruct>(10);
-        let response_port = ast_proc.get_stream_block_mut().get_output_mut::<K2ReturnStruct>(&"response".to_string());
+        let response_port = syntax_tree_proc.get_stream_block_mut().get_output_mut::<K2ReturnStruct>(&"response".to_string());
         assert!(response_port.is_ok());
         let response_port = response_port.unwrap();
         response_port.connect(sender);
 
-        let command_port = ast_proc.get_stream_block_mut().get_input::<K2ReturnStruct>(&"command".to_string());
+        let command_port = syntax_tree_proc.get_stream_block_mut().get_input::<K2ReturnStruct>(&"command".to_string());
         assert!(command_port.is_ok());
         let command_port = command_port.clone().unwrap().get_sender().clone();
 
-        assert!(ast_proc.initialize().is_ok());
-        let file = File::open("test/ok_ast_command_sequence").map_err(|_| k2err!(K2ErrorCode::NotFound,""));
+        assert!(syntax_tree_proc.initialize().is_ok());
+        let file = File::open("test/ok_command_sequence").map_err(|_| k2err!(K2ErrorCode::NotFound,""));
         let reader = BufReader::new(file.unwrap());
         for line in reader.lines() {
             assert!(line.is_ok());
@@ -561,7 +580,7 @@ mod test
                 data: None,
             };
             assert!(command_port.send(message).is_ok());
-            assert!(ast_proc.process().is_ok());
+            assert!(syntax_tree_proc.process().is_ok());
             let response = receiver.recv();
             assert!(response.is_ok());
             let response = response.unwrap();

@@ -1,0 +1,32 @@
+new library test_library
+new processor test_library.test_processor
+new input test_library.test_processor.test_input f64
+new output test_library.test_processor.test_output f64
+new parameter test_library.test_processor.test_parameter i64 0 static
+new state test_library.test_processor.test_state f64 0.0
+new command test_library.test_processor.test_command test::test
+
+new application test_app
+new streaming_control test_app.test_streamer
+new block test_app.test_streamer.test_block_1 test_library.test_processor
+new block test_app.test_streamer.test_block_2 test_library.test_processor
+new mode test_app.test_streamer.test_mode 
+new chain test_app.test_streamer.test_chain
+
+add test_app.test_streamer.test_block_1 test_app.test_streamer.test_chain
+add test_app.test_streamer.test_block_2 test_app.test_streamer.test_chain
+add test_app.test_streamer.test_chain test_app.test_streamer.test_mode
+
+set test_app.test_streamer.test_block_1.test_parameter test_app.test_streamer.test_mode 5
+set test_app.test_streamer.test_block_1.test_state test_app.test_streamer.test_mode 3.5
+set test_library.test_processor.test_parameter 0
+set test_library.test_processor user_import xxx
+
+new processor test_library.test_processor_to_delete
+delete test_library.test_processor_to_delete
+
+connect test_app.test_streamer.test_block_1.test_output test_app.test_streamer.test_block_2.test_output
+connect test_app.test_streamer.test_block_2.test_output test_app.test_streamer.test_block_1.test_output
+disconnect test_app.test_streamer.test_block_2.test_output test_app.test_streamer.test_block_1.test_output
+
+exec test_app.test_streamer.test_block_1.test_command

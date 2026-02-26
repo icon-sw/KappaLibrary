@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 pub mod parser;
 pub mod coder;
-pub mod ast;
 pub mod syntax_tree;
 
 pub type Token = Vec<String>;
