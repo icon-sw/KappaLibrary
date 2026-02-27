@@ -63,7 +63,7 @@ impl Parser {
                 }
             },
             "parameter" | "state" => {
-                if command.len() != 5 {
+                if command.len() < 5 {
                     return Err("Invalid command length for parameter/state".to_string());
                 }
                 if split_name.len() != 3 {
@@ -76,6 +76,9 @@ impl Parser {
                 let value = &command[4];
                 if value.is_empty() {
                     return Err("Value cannot be empty".to_string());
+                }
+                if object_type.as_str() == "parameter" && command.len() != 6 {
+                    return Err("Missing parameter type".to_string());
                 }
             }
             "processor" => {
@@ -120,15 +123,15 @@ impl Parser {
             }
             "stream" => {
                 if command.len() != 3 {
-                    return Err("Invalid command length for block".to_string());
+                    return Err("Invalid command length for stream".to_string());
                 }
                 if split_name.len() != 2 {
                     return Err("Invalid object name format for stream".to_string());
                 }
             }
             "command" => {
-                if command.len() != 3 {
-                    return Err("Invalid command length for block".to_string());
+                if command.len() != 4 {
+                    return Err("Invalid command length for command".to_string());
                 }
                 if !object_name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.' ) {
                     return Err("Invalid object name".to_string());

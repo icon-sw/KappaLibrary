@@ -343,6 +343,9 @@ impl SyntaxTreeProcessor {
         for parent_name in &object.parent {
             if let Some(parent_object) = self.objects.get_mut(parent_name) {
                 parent_object.children.retain(|child| child != &object_name);
+                if parent_object.object_type == "mode".to_string() {
+                    parent_object.properties.retain(|k, _| k != &object_name);
+                }
             }
         }
         let mut deleted_objects = vec![object.clone()];
@@ -384,7 +387,11 @@ impl SyntaxTreeProcessor {
                             return Err(format!("Mode {} not exist", mode_selected));
                         }
                         let mode_obj = self.objects.get_mut(&mode_selected).ok_or("Object not found".to_string())?;
+                        if mode_obj.object_type != "mode" {
+                            return Err(format!("{} is not a mode", mode_selected));
+                        }
                         mode_obj.properties.insert(object_name, k2_parse_struct.tokens[3].clone());
+                        object.parent.push(mode_selected);
                     },
                     _ => {return Err("Wrong command length".to_string());},
                 }
