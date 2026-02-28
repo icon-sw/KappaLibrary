@@ -7,6 +7,7 @@ pub mod coder;
 mod processor_coder;
 mod library_coder;
 mod application_coder;
+mod cargo_interface;
 
 pub fn main() -> Result<(), ()>{
     let args: Vec<String> = env::args().collect();
