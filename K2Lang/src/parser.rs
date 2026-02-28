@@ -90,7 +90,7 @@ impl Parser {
                 }
             }
             "library" | "application" => {
-                if command.len() != 3 {
+                if command.len() != 4 {
                     return Err("Invalid command length for library/application".to_string());
                 }
                 if split_name.len() != 1 {
@@ -229,7 +229,7 @@ impl Parser {
                         command: command.to_string(),
                         tokens: res.clone(),
                         message: format!("Ok"),
-                        data: None,
+                        data: Vec::new(),
                     };
                 }
                 Err(e) => {
@@ -238,7 +238,7 @@ impl Parser {
                         command: command.to_string(),
                         tokens: Vec::new(),
                         message: e,
-                        data: None,
+                        data: Vec::new(),
                     };
                 }
             }
@@ -248,7 +248,7 @@ impl Parser {
                 command: command.to_string(),
                 tokens: Vec::new(),
                 message: format!("Unknown"),
-                data: None,
+                data: Vec::new(),
             };
         }
         response

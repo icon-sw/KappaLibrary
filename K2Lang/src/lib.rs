@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 pub mod parser;
-pub mod coder;
 pub mod syntax_tree;
 
 pub type Token = Vec<String>;
@@ -21,7 +20,7 @@ pub struct K2ReturnStruct {
     pub command: String,
     pub tokens: Token,
     pub message: String,
-    pub data: Option<Vec<K2Object>>,
+    pub data: Vec<K2Object>,
 }
 
 impl K2ReturnStruct {
@@ -31,7 +30,7 @@ impl K2ReturnStruct {
             command: "".to_string(),
             tokens: Vec::new(),
             message: "".to_string(),
-            data: None,
+            data: Vec::new(),
         }
     }
 }

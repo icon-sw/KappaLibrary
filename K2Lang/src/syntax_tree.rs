@@ -6,7 +6,7 @@ use std::{sync::{Arc, Mutex, MutexGuard}};
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
 use k2_stream::{errors::{K2Error, K2ErrorCode}, k2err, processor::memory::{DataHeader, MemoryTrait}, processor::processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
-use crate::{K2Object, K2ReturnStruct, coder::ProcessorCodePart};
+use crate::{K2Object, K2ReturnStruct};
 
 type SyntaxTreeReturn = Result<K2ReturnStruct, String>;
 type SyntaxTreeCallback = fn(&mut SyntaxTreeProcessor, &K2ReturnStruct) -> SyntaxTreeReturn;
@@ -271,13 +271,13 @@ impl SyntaxTreeProcessor {
                         }
                     },
                     "application" | "library" => {
-                        dbg!("I'm creating library");
                         if split_name.len() != 1 {
                             return Err("Invalid object name format for library/application".to_string());
                         }
-                        if k2_parse_struct.tokens.len() != 3 {
+                        if k2_parse_struct.tokens.len() != 4 {
                             return Err("Invalid argument".to_string());
                         }
+                        processing_object.properties.insert("path".to_string(), k2_parse_struct.tokens[3].clone());
                     },
                     _ => {return  Err(format!("Unknow type {}", object_type));}
                     
@@ -295,7 +295,7 @@ impl SyntaxTreeProcessor {
                 command: k2_parse_struct.command.clone(),
                 tokens: k2_parse_struct.tokens.clone(),
                 message: "New".to_string(),
-                data: Some(vec![processing_object]),
+                data: vec![processing_object],
         })
     }
     fn parse_add(&mut self, k2_parse_struct: &K2ReturnStruct) -> SyntaxTreeReturn {
@@ -328,7 +328,7 @@ impl SyntaxTreeProcessor {
                 command: k2_parse_struct.command.clone(),
                 tokens: k2_parse_struct.tokens.clone(),
                 message: "Add".to_string(),
-                data: Some(vec![relation_object.clone(), object.clone()]),
+                data: vec![relation_object.clone(), object.clone()],
         })
     }
     fn parse_delete(&mut self, k2_parse_struct: &K2ReturnStruct) -> SyntaxTreeReturn {
@@ -366,7 +366,7 @@ impl SyntaxTreeProcessor {
                 command: k2_parse_struct.command.clone(),
                 tokens: k2_parse_struct.tokens.clone(),
                 message: "delete".to_string(),
-                data: Some(deleted_objects),
+                data: deleted_objects,
         })
     }
     fn parse_set(&mut self, k2_parse_struct: &K2ReturnStruct) -> SyntaxTreeReturn {
@@ -401,7 +401,6 @@ impl SyntaxTreeProcessor {
                     return Err("Wrong command length".to_string());
                 }
                 let code_part = k2_parse_struct.tokens[2].clone();
-                ProcessorCodePart::try_from(code_part.clone()).map_err(|_| "Invalid code part".to_string())?;    
                 object.properties.insert(code_part, k2_parse_struct.tokens[3].clone());
             }
             _ => {return Err(format!("Type {} is not settable", object.object_type));}
@@ -412,7 +411,7 @@ impl SyntaxTreeProcessor {
                 command: k2_parse_struct.command.clone(),
                 tokens: k2_parse_struct.tokens.clone(),
                 message: "set".to_string(),
-                data: Some(vec![object.clone()]),
+                data: vec![object.clone()],
         })
     }
     fn parse_connect(&mut self, k2_parse_struct: &K2ReturnStruct) -> SyntaxTreeReturn {
@@ -456,7 +455,7 @@ impl SyntaxTreeProcessor {
                 command: k2_parse_struct.command.clone(),
                 tokens: k2_parse_struct.tokens.clone(),
                 message: "connect".to_string(),
-                data: Some(vec![source_parent_obj.clone()]),
+                data: vec![source_parent_obj.clone()],
         })
     }
     fn parse_disconnect(&mut self, k2_parse_struct: &K2ReturnStruct) -> SyntaxTreeReturn {
@@ -502,7 +501,7 @@ impl SyntaxTreeProcessor {
                     command: k2_parse_struct.command.clone(),
                     tokens: k2_parse_struct.tokens.clone(),
                     message: "Disconnect".to_string(),
-                    data: Some(vec![source_parent_obj.clone()]),
+                    data: vec![source_parent_obj.clone()],
             })
         } else {
             return Err("Connection does not exist".to_string());
@@ -534,7 +533,7 @@ impl SyntaxTreeProcessor {
                         command: k2_parse_struct.command.clone(),
                         tokens: k2_parse_struct.tokens.clone(),
                         message: e,
-                        data: None,
+                        data: Vec::new(),
                     };
                 }
             }
@@ -584,7 +583,7 @@ mod test
                 command: line.clone(),
                 message: "Ok".to_string(),
                 tokens: tokens,
-                data: None,
+                data: Vec::new(),
             };
             assert!(command_port.send(message).is_ok());
             assert!(syntax_tree_proc.process().is_ok());
