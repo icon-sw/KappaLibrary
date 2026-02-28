@@ -26,7 +26,8 @@ pub trait CoderTrait : Send + Sync {
     fn proc_connect(&mut self, k2_struct: &K2ReturnStruct) -> Result<String, String>;
     fn proc_disconnect(&mut self, k2_struct: &K2ReturnStruct) -> Result<String, String>;
     fn proc_exec(&mut self, k2_struct: &K2ReturnStruct) -> Result<String, String>;
-    fn generate(&self) -> Result<String, String>;
+    fn generate(&mut self) -> Result<String, String>;
+    fn build(&self) -> Result<String, String>;
 }
 
 

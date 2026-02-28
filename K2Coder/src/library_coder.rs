@@ -109,10 +109,13 @@ impl CoderTrait for LibraryCoder {
     fn proc_exec(&mut self, _k2_struct: &K2ReturnStruct) -> Result<String, String> {
         Err("Exec not applicable to library".to_string())
     }
-    fn generate(&self) -> Result<String, String> {
-        for proc in self.processors.values() {
+    fn generate(&mut self) -> Result<String, String> {
+        for proc in self.processors.values_mut() {
             proc.generate()?;
         }
         Ok(format!("Library {} code generate with success", self.name.clone()))
+    }
+    fn build(&self) -> Result<String, String> {
+        Ok("".to_string())
     }
 }

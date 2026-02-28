@@ -186,7 +186,10 @@ impl CoderTrait for ApplicationCoder {
     fn proc_exec(&mut self, _k2_struct: &K2ReturnStruct) -> Result<String, String> {
         Err("Exec not supported by K2Coder".to_string())
     }
-    fn generate(&self) -> Result<String, String> {
+    fn generate(&mut self) -> Result<String, String> {
         Ok(format!("Application {} code generate with success", self.name.clone()))
+    }
+    fn build(&self) -> Result<String, String> {
+        Ok("".to_string())
     }
 }
