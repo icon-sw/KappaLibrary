@@ -190,6 +190,8 @@ impl CoderTrait for ApplicationCoder {
         Ok(format!("Application {} code generate with success", self.name.clone()))
     }
     fn build(&self) -> Result<String, String> {
-        Ok("".to_string())
+        let cargo_if = CARGO_IF.get().ok_or("Cargo interface not setted".to_string())?;
+        cargo_if.cargo_build(self.application_path.clone(), "debug".to_string())?;
+        Ok("Build completed".to_string())
     }
 }

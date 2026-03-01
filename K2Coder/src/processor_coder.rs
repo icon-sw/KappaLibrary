@@ -1,9 +1,9 @@
-use std::{collections::HashMap, fmt};
+use std::{collections::HashMap, fmt::{self}};
 
 use k2_lang::{K2Object, K2ReturnStruct};
 use k2_stream::errors::{K2Error, K2ErrorCode};
 
-use crate::coder::CoderTrait;
+use crate::coder::{Coder, CoderTrait};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ProcessorCodePart {
@@ -172,12 +172,32 @@ impl CoderTrait for ProcessCoder {
         Err("Exec not applicable to processor".to_string())
     }
     fn generate(&mut self) -> Result<String, String> {
-        self.generate_k2_member_creation();
+        let code_file = Coder::get_tmp_file();
+        self.generate_k2_member_creation()?;
         let mut code_lines: Vec<String> = Vec::new();
         for index in 0..=10 {
             let code_part = ProcessorCodePart::try_from(index).map_err(|e| e.message)?;
+            match code_part {
+                ProcessorCodePart::K2InitCode => {
+                    code_lines.push(format!("impl ProcessorTrait for {} {{", self.get_name()));
+                    code_lines.push(format!("    fn new(name: String) -> ProcessorNewReturn {{"));
+                    code_lines.push(format!("        let mut self_instance = Self {{"))
+                }
+                ProcessorCodePart::InitializeCode => {
+                    code_lines.push(format!("        }};"));
+                    code_lines.push(format!("        Ok(Box::new(self_instance))"));
+                    code_lines.push(format!("    }}"));
+                }
+                ProcessorCodePart::UserCode => {
+                    code_lines.push(format!("}}"));
+                }
+                _ => {},
+            }
             code_lines.push(self.code_parts.get(&code_part).unwrap().clone());
         }
+        let full_code = code_lines.join("\n");
+        Coder::file_write(code_file.clone(), full_code)?;
+        Coder::file_move(&code_file, &self.get_path())?;
         Ok(format!("Processor {} code generate with success", self.name.clone()))
     }
     fn build(&self) -> Result<String, String> {
@@ -186,8 +206,50 @@ impl CoderTrait for ProcessCoder {
 }
 
 impl ProcessCoder {
-    pub fn generate_k2_member_creation(&mut self) {
-        
+    pub fn generate_k2_member_creation(&mut self) -> Result<(), String>{
+        let mut input_creation: Vec<String> = Vec::new();
+        let mut output_creation: Vec<String> = Vec::new();
+        let mut parameter_creation: Vec<String> = Vec::new();
+        let mut state_creation: Vec<String> = Vec::new();
+        let mut command_creation: Vec<String> = Vec::new();
+        for (object_name, object) in self.children.iter() {
+            match object.object_type.clone().as_str() {
+                "input" => {
+                    let input_type = object.properties.get("type").ok_or("Missing type".to_string())?;
+                    input_creation.push(format!("self_instance.get_stream_block_mut().add_input::<{}>(\"{}\".to_string())?;", input_type, object_name));
+                }
+                "output" => {
+                    let output_type = object.properties.get("type").ok_or("Missing type".to_string())?;
+                    output_creation.push(format!("self_instance.get_stream_block_mut().add_output::<{}>(\"{}\".to_string())?;", output_type, object_name));
+                }
+                "parameter" => {
+                    let parameter_type = object.properties.get("type").ok_or("Missing type".to_string())?;
+                    let parameter_value = object.properties.get("value").ok_or("Missing value".to_string())?;
+                    let parameter_kind = object.properties.get("kind").ok_or("Missing kind".to_string())?.to_uppercase();
+                    parameter_creation.push(format!("self_instance.get_stream_block_mut().add_parameter::<{}>(\"{}\".to_string(), ParameterType::{})?;", parameter_type, object_name, parameter_kind));
+                    parameter_creation.push(format!("self_instance.get_stream_block_mut().set_param_value::<{}>(\"{}\", {}", parameter_type, object_name, parameter_value));
+                }
+                "state" => {
+                    let state_type = object.properties.get("type").ok_or("Missing type".to_string())?;
+                    let state_value = object.properties.get("value").ok_or("Missing value".to_string())?;
+                    state_creation.push(format!("self_instance.get_stream_block_mut().add_state::<{}>(\"{}\".to_string())?;", state_type, object_name));
+                    state_creation.push(format!("self_instance.get_stream_block_mut().set_state_value::<{}>(\"{}\", {}", state_type, object_name, state_value));
+                }
+                "command" => {
+                    let callback = object.properties.get("callback").ok_or("Missing callback".to_string())?;
+                    command_creation.push(format!("self_instance.get_stream_block_mut().add_command(\"{}\".to_string(), {});?", object_name, callback));
+                }
+                _ => {}
+            }
+        }
+        let mut code_block = Vec::new();
+        code_block.push(input_creation.join("\n"));
+        code_block.push(output_creation.join("\n"));
+        code_block.push(parameter_creation.join("\n"));
+        code_block.push(state_creation.join("\n"));
+        code_block.push(command_creation.join("\n"));
+        self.code_parts.insert(ProcessorCodePart::K2MemberCreation, code_block.join("\n"));
+        Ok(())
     }
     pub fn read_code_template(part: &ProcessorCodePart) -> String {
         let template_path = format!("templates/{}.template", part);

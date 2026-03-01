@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::io::Write;
+
+use rand::prelude::*;
 
 use k2_lang::{K2Object, K2ReturnStruct};
 use k2_stream::k2err;
@@ -11,7 +14,6 @@ use processor_macro::K2ProcessorBlock;
 use crate::application_coder::ApplicationCoder;
 use crate::cargo_interface::CargoInterface;
 use crate::library_coder::LibraryCoder;
-use crate::processor_coder::ProcessCoder;
 
 pub static CARGO_IF: OnceLock<CargoInterface> = OnceLock::new();
 pub trait CoderTrait : Send + Sync {
@@ -150,5 +152,56 @@ impl Coder {
         }
         Ok(response)
     }
-    
+    pub fn get_tmp_file() -> String {
+        const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        let mut rng = rand::rng();
+        let random_string: String = (0..16)
+            .map(|_| {
+                let idx = rng.random_range(0..CHARSET.len());
+                CHARSET[idx] as char
+            })
+            .collect();
+        
+        format!("/tmp/processor_coder_{}.rs", random_string)
+    }
+    pub fn file_write(path: String, content: String) -> Result<(), String> {
+        let mut file = match std::fs::File::create(&path) {
+            Ok(file) => file,
+            Err(e) => return Err(format!("Error creating file {}: {}", path, e)),
+        };
+        match file.write_all(content.as_bytes()) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Error writing to file {}: {}", path, e)),
+        }
+    }
+
+    pub fn file_move(src: &String, dest: &String) -> Result<(), String> {
+        match std::fs::rename(src, dest) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Error moving file from {} to {}: {}", src, dest, e)),
+        }
+    }
+    pub fn to_snake_case(s: &str) -> String {
+        let mut result = String::new();
+        let mut chars = s.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            if c.is_ascii_uppercase() {
+                if !result.is_empty() {
+                    let next_char_is_lowercase = chars.peek().map_or(false, |&next| next.is_ascii_lowercase());
+                    if next_char_is_lowercase {
+                        result.push('_');
+                    } else if result.chars().last().map_or(false, |last| !last.is_ascii_uppercase() && last != '_') {
+                        result.push('_');
+                    }
+                }
+                result.push(c.to_ascii_lowercase());
+            } else {
+                result.push(c);
+            }
+        }
+        result
+    }
+
+
 }

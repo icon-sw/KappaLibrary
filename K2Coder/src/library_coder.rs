@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use k2_lang::{K2Object, K2ReturnStruct};
 
-use crate::{coder::{CARGO_IF, CoderTrait}, processor_coder::ProcessCoder};
+use crate::{coder::{CARGO_IF, Coder, CoderTrait}, processor_coder::ProcessCoder};
 
 pub struct LibraryCoder {
     name: String,
@@ -110,12 +110,20 @@ impl CoderTrait for LibraryCoder {
         Err("Exec not applicable to library".to_string())
     }
     fn generate(&mut self) -> Result<String, String> {
+        let code_file = Coder::get_tmp_file();
+        let mut lib_code: Vec<String> = Vec::new();
         for proc in self.processors.values_mut() {
+            lib_code.push(format!("pub mod {}", proc.get_name()));
             proc.generate()?;
         }
+        let full_code = lib_code.join("\n");
+        Coder::file_write(code_file.clone(), full_code)?;
+        Coder::file_move(&code_file, &self.path)?;
         Ok(format!("Library {} code generate with success", self.name.clone()))
     }
     fn build(&self) -> Result<String, String> {
-        Ok("".to_string())
+        let cargo_if = CARGO_IF.get().ok_or("Cargo interface not setted".to_string())?;
+        cargo_if.cargo_build(self.library_path.clone(), "debug".to_string())?;
+        Ok("Build completed".to_string())
     }
 }
