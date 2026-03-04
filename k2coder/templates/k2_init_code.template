@@ -1,0 +1,15 @@
+impl ProcessorTrait for K2Template {
+    fn new(name: String) -> ProcessorNewReturn {
+        let mut self_instance = Self {
+            name: name.clone(),
+            header: ProcessorHeader {
+                proc_name: "K2Template".to_string(),
+                description: "".to_string()},
+                version: "".to_string(),
+                author: "".to_string(),
+                email: "".to_string(),
+                license: "LGPLv2.0".to_string(),
+                repository: "".to_string(),
+            },
+            stream_block: StreamBlock::new(),
+            state: Arc::new(Mutex::new(StreamState::Uninitialized)),

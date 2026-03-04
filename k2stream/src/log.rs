@@ -1,5 +1,3 @@
-use crate::errors::K2Error;
-
 pub enum K2LogLevel {
     Emergency,
     Alert,

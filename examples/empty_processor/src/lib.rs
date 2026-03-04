@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use k2_stream::processor::processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState};
-use k2_stream::{errors::{K2ErrorCode, K2Error}, processor::memory::{DataHeader, MemoryTrait}};
+use k2stream::processor::processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState};
+use k2stream::{errors::{K2ErrorCode, K2Error}, processor::memory::{DataHeader, MemoryTrait}};
 use memory_macro::K2Memory;
 use processor_macro::K2ProcessorBlock;
 // END_K2_IMPORT

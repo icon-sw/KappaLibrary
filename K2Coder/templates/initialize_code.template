@@ -1,3 +1,0 @@
-fn initialize(&mut self ) -> Result<(), K2Error> {
-    Ok(()) // INITIALIZE_CODE
-}

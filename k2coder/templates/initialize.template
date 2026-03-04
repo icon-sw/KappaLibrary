@@ -1,0 +1,5 @@
+    fn initialize(&mut self ) -> Result<(), K2Error> {{
+        let mut state = self.state.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Unable to set state"))?;
+        *state = StreamState::Initialized;
+        Ok(())
+    }}

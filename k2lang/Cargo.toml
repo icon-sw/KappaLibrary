@@ -1,0 +1,9 @@
+[package]
+name = "k2lang"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+k2stream = { path = "../k2stream"}
+memory_macro = { path = "../macro/memory_macro"}
+processor_macro = { path = "../macro/processor_macro"}

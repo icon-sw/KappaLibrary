@@ -1,0 +1,6 @@
+#[derive(K2Memory, K2ProcessorBlock)]
+pub struct K2Template {
+    name: String,
+    header: ProcessorHeader,
+    stream_block: StreamBlock,
+    state: Arc<Mutex<StreamState>>,

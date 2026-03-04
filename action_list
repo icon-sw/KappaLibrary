@@ -15,8 +15,8 @@ K2/src
 Creazione Library:
 - cargo new --lib nome_lib
 - aggiunger a dependecy:
-    - k2_stream = { path = "../K2Stream"}
+    - k2stream = { path = "../k2stream"}
     - processor_macro = { path = "../macro/processor_macro"}
     - memory_macro = { path = "../macro/memory_macro"}
 
-Sostituire tutti i K2Error{} con k2err! in K2Stream
+Sostituire tutti i K2Error{} con k2err! in k2stream
