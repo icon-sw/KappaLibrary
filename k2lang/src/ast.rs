@@ -176,11 +176,25 @@ impl AbstractSyntaxTree {
         Ok(output)
     }
     pub fn parse_set(&mut self, input: &K2LangStruct) -> K2LangReturn {
-        let object_name = input.data[0].name.clone();
-        let object = self.object_table.get_mut(&object_name).ok_or(k2err!(K2ErrorCode::NotFound, format!("Object {} not found", object_name)))?;
-        object.properties.insert(input.tokens[2].clone(), input.tokens[3].clone());
         let mut output = input.clone();
-        output.data = vec![object.clone()];
+        let object_name = input.data[0].name.clone();
+        let mut object = self.object_table.get(&object_name).ok_or(k2err!(K2ErrorCode::NotFound, format!("Object {} not found", object_name)))?.clone();
+        if input.data[0].parent.is_empty() {
+            object.properties.insert(input.tokens[2].clone(), input.tokens[3].clone());
+            output.data = vec![object.clone()];
+        } else {
+            if object.object_type != "parameter".to_string() {
+                return Err(k2err!(K2ErrorCode::InvalidOperation, "Only parameter can be set for mode"));
+            }
+            let parent = self.object_table.get_mut(&object_name).ok_or(k2err!(K2ErrorCode::NotFound, format!("Object {} not found", object.parent[0])))?;
+            if parent.object_type != "mode".to_string() {
+                return Err(k2err!(K2ErrorCode::InvalidOperation, format!("Object {} is not a mode", parent.name)));
+            }
+            // TODO: Warning on input.tokens[3] if not equal to value. Forced to value
+            parent.properties.insert(object_name.clone(), input.tokens[4].clone());
+            output.data = vec![parent.clone(), object.clone()];
+        }
+        self.object_table.insert(object_name, object);
         Ok(output)
     }
     pub fn parse_connect(&mut self, input: &K2LangStruct) -> K2LangReturn {

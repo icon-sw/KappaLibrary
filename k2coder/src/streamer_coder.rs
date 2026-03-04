@@ -67,13 +67,23 @@ impl CoderTrait for StreamerCoder {
                 self.object_map.remove(&input.data[0].name);
             }
             "set" => {
-                if let Some((block_name, _ ))  = input.data[0].name.rsplit_once('.') {
-                    let object = self.object_map.get_mut(block_name)
-                        .ok_or(k2err!(K2ErrorCode::NotFound, format!("Block {} not found", block_name)))?;
-                    let value = input.data[0].properties.get("value").ok_or(k2err!(K2ErrorCode::NotFound, "Value field not found"))?;
-                    object.settings.insert(input.data[0].name.clone(), value.clone());
+                if input.data.len() == 1 {
+                    if let Some((block_name, _ ))  = input.data[0].name.rsplit_once('.') {
+                        let object = self.object_map.get_mut(block_name)
+                            .ok_or(k2err!(K2ErrorCode::NotFound, format!("Block {} not found", block_name)))?;
+                        let value = input.data[0].properties.get("value").ok_or(k2err!(K2ErrorCode::NotFound, "Value field not found"))?;
+                        object.settings.insert(input.data[0].name.clone(), value.clone());
+                    } else {
+                        return Err(k2err!(K2ErrorCode::BadFormat, format!("Invalid name {}", input.data[0].name)));
+                    }
                 } else {
-                    return Err(k2err!(K2ErrorCode::BadFormat, format!("Invalid name {}", input.data[0].name)));
+                    let mode_name = input.data[0].name.clone();
+                    let object_name = input.data[1].name.clone();
+                    let value = input.data[0].properties.get(&object_name)
+                        .ok_or(k2err!(K2ErrorCode::NotFound, format!("Key {} not found in {} properties", object_name, mode_name)))?;
+                    let mode_object = self.object_map.get_mut(&mode_name)
+                        .ok_or(k2err!(K2ErrorCode::NotFound, format!("Mode {} not found", mode_name)))?;
+                    mode_object.settings.insert(object_name, value.clone());
                 }
             }
             "connect" => {

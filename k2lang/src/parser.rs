@@ -181,16 +181,30 @@ impl Parser {
     }
     pub fn parse_set(input: &K2LangStruct) -> K2LangReturn {
         let mut output = input.clone();
-        if input.tokens.len() != 4 {
+        if input.tokens.len() < 4 {
             return Err(k2err!(K2ErrorCode::BadFormat, "Wrong number of parameter for set command".to_string()));
         }
-         output.data.push(
-            K2LangObject { 
-                name: input.tokens[1].clone(), 
-                object_type: "".to_string(), 
-                parent: Vec::new(), 
-                children: Vec::new(), 
-                properties: HashMap::new() });
+        match input.tokens.len() {
+            4 => {
+                output.data.push(
+                    K2LangObject { 
+                        name: input.tokens[1].clone(), 
+                        object_type: "".to_string(), 
+                        parent: Vec::new(), 
+                        children: Vec::new(), 
+                        properties: HashMap::new() });
+            }
+            5 => {
+            output.data.push(
+                K2LangObject { 
+                    name: input.tokens[2].clone(), 
+                    object_type: "".to_string(), 
+                    parent: vec![input.tokens[1].clone()], 
+                    children: Vec::new(), 
+                    properties: HashMap::new() });
+            }
+            _ => {return Err(k2err!(K2ErrorCode::BadFormat, "Wrong number of parameter for set command".to_string()));}
+        }
         Ok(output)
     }
     pub fn parse_connect(input: &K2LangStruct) -> K2LangReturn {
