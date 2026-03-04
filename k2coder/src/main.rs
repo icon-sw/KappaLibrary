@@ -36,7 +36,7 @@ fn init() -> Result<isize, K2Error>{
     stream.add_processor(&chain.clone(), parser.name().clone(), parser)?;
     stream.add_processor(&chain.clone(), ast.name().clone(), ast)?;
     stream.add_processor(&chain.clone(), coder.name().clone(), coder)?;
-    stream.add_mode(1, mode)?;
+    stream.add_mode(mode)?;
     stream.initialize()?;
     Ok(stream_id)
 }

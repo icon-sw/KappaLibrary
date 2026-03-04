@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, iter::chain};
 
 use k2lang::K2LangStruct;
 use k2stream::{errors::{K2ErrorCode, K2Error}, k2err};
@@ -15,12 +15,16 @@ pub struct StreamChild {
     pub settings: HashMap<String, String>,
 }
 pub struct StreamerCoder {
+    name: String,
+    file_name: String,
     object_map: HashMap<String, StreamChild>,
 }
 
 impl StreamerCoder {
-    pub fn new() -> Self {
+    pub fn new(name: String, app_path: String) -> Self {
         Self {
+            name: name.clone(),
+            file_name: format!("{}/src/{}_configuration.rs", app_path, name),
             object_map: HashMap::new(),
         }
     }
@@ -111,6 +115,41 @@ impl CoderTrait for StreamerCoder {
         Ok("Ok".to_string())
     }
     fn generate(&mut self) -> K2CoderReturn {
+        let mut blocks: Vec<StreamChild> = Vec::new();
+        let mut chains: Vec<StreamChild> = Vec::new();
+        let mut modes: Vec<StreamChild> = Vec::new();
+        for obj in self.object_map.values() {
+            match obj.k2_type.as_str() {
+                "block" => blocks.push(obj.clone()),
+                "chain" => chains.push(obj.clone()),
+                "mode"  => modes.push(obj.clone()),
+                _       => {}
+            }
+        }
+        let mut code_lines: Vec<String> = Vec::new();
+
+        code_lines.push(format!("impl StreamConfiguration {{"));
+        code_lines.push(format!("    fn create_blocks(&mut self) {{"));
+        for block in blocks {
+            code_lines.push(format!("        self.blocks.insert(\"{}\", {}::new(\"{}\")", block.name, block.block_type.unwrap(), block.name));
+        }
+        code_lines.push(format!("    }}"));
+        code_lines.push(format!("    fn create_chains(&mut self) {{"));
+        for chain in chains {
+            code_lines.push(format!("        self.chains.insert(\"{}\", Chain::new(\"{}\")", chain.name, chain.name));
+        }
+        code_lines.push(format!("    }}"));
+        code_lines.push(format!("    fn create_modes(&mut self) {{"));
+        code_lines.push(format!("        let stream = StreamController::get_stream_by_id(self.stream_id)?;"));
+        code_lines.push(format!("        let mut stream = stream.lock().map_err(|_|k2err!(K2ErrorCode::LockError, \"\".to_string()))?;"));
+        code_lines.push(format!("        let stream = stream.as_any_mut().downcast_mut::<StreamController>().unwrap();"));
+        for mode in modes {
+            code_lines.push(format!("        let mode = OperativeMode::new(\"{}\".to_string)", mode.name));
+            code_lines.push(format!("        stream.add_mode(mode);"));
+        }
+        code_lines.push(format!("    }}"));
+        code_lines.push(format!("    fn create_chains(&mut self) {{"));
+
         Ok("Ok".to_string())
     }
     fn build(&self) -> K2CoderReturn {   

@@ -144,17 +144,15 @@ impl Chain {
 
 pub struct OperativeMode {
     pub name: String,
-    pub id: usize,
     stream_id: isize,
     chains: HashMap<String, Arc<Mutex<Chain>>>,
     chain_results: HashMap<String, JoinHandle<Result<(), K2Error>>>,
 }
 
 impl OperativeMode {
-    pub fn new(name: String, id: usize) -> Self {
+    pub fn new(name: String) -> Self {
         Self {
             name,
-            id,
             chains: HashMap::new(),
             chain_results: HashMap::new(),
             stream_id: -1,
@@ -281,7 +279,7 @@ mod test {
     }
     #[test]
     fn mode_test() {
-        let mut mode = OperativeMode::new("test_mode".to_string(), 1);
+        let mut mode = OperativeMode::new("test_mode".to_string());
         assert_eq!(mode.get_stream_id(), -1);
         let chain = Chain::new("test_chain".to_string());
         assert!(mode.add_chain("test_chain".to_string(), Arc::new(Mutex::new(chain))).is_ok());

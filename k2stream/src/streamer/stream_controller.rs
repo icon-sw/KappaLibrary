@@ -17,14 +17,18 @@ static STREAM_ID_COUNTER: OnceLock<Mutex<isize>> = OnceLock::new();
 
 static PROCESSOR_TABLE: OnceLock<MemoryTable> = OnceLock::new();
 
+pub trait StreamConfigurationTrait: Send + Sync {
+    fn set_mode_configuration(&mut self, mode: String) -> Result<(), K2Error>;
+}
 #[derive(K2Memory, K2ProcessorBlock)]
 pub struct StreamController {
     pub name: String,
     pub header: ProcessorHeader,
     stream_id: isize,
     stream_block: StreamBlock,
-    modes: HashMap<usize, OperativeMode>,
-    current_mode_id: usize,
+    stream_configuration: Box<dyn StreamConfigurationTrait>,
+    modes: HashMap<String, OperativeMode>,
+    current_mode: String,
     command_map: HashMap<String, String>,
     commands_callback: HashMap<String, Callback>,
     state: Arc<Mutex<StreamState>>,
@@ -32,7 +36,7 @@ pub struct StreamController {
 }
 
 impl StreamController {
-    pub fn create(name: String) -> Result<isize, K2Error> {
+    pub fn create(name: String, configuration: Box<dyn StreamConfigurationTrait>) -> Result<isize, K2Error> {
         let mut self_instance = Self {
             name: name.clone(),
             stream_id: -1_isize,
@@ -46,8 +50,9 @@ impl StreamController {
                 repository: "".to_string(),
             },
             stream_block: StreamBlock::new(),
+            stream_configuration: configuration,
             modes: HashMap::new(),
-            current_mode_id: 0,
+            current_mode: "default".to_string(),
             command_map: HashMap::new(),
             state: Arc::new(Mutex::new(StreamState::Uninitialized)),
             commands_callback: HashMap::new(),
@@ -68,8 +73,8 @@ impl StreamController {
         self_instance.stream_block.set_stream_id(stream_id);
         dbg!("Registering commands...");
         self_instance.register_commands()?;
-        let mode = OperativeMode::new("default".to_string(), 0);
-        self_instance.add_mode(0, mode)?;
+        let mode = OperativeMode::new("default".to_string());
+        self_instance.add_mode(mode)?;
         {
             let mut processor_table = StreamController::get_processor_table().lock().map_err(|_| k2err!(K2ErrorCode::LockError,""))?;
             processor_table.insert(name.clone(), Arc::new(Mutex::new(Box::new(self_instance))));
@@ -152,31 +157,33 @@ impl StreamController {
         }
         Ok(())
     }
-    pub fn add_mode(&mut self, id: usize, mut mode: OperativeMode) -> Result<(), K2Error> {
-        if self.modes.contains_key(&id) {
+    pub fn add_mode(&mut self, mut mode: OperativeMode) -> Result<(), K2Error> {
+        let mode_name = mode.name.clone();
+        if self.modes.contains_key(&mode_name) {
             Err(k2err!(K2ErrorCode::AlreadyExists, "Mode with this ID already exists"))
         } else {
             mode.set_stream_id(self.get_stream_id())?;
-            self.modes.insert(id, mode);
-            let mode = self.modes.get(&id).unwrap();
+            self.modes.insert(mode_name.clone(), mode);
+            let mode = self.modes.get(&mode_name).unwrap();
             dbg!(mode.get_stream_id());
             Ok(())
         }
     }
-    pub fn get_mode(&self, id: &usize) ->  Result<&OperativeMode, K2Error> {
-        self.modes.get(id).ok_or(k2err!(K2ErrorCode::NotFound, "Mode not found"))
+    pub fn get_mode(&self, name: &String) ->  Result<&OperativeMode, K2Error> {
+        self.modes.get(name).ok_or(k2err!(K2ErrorCode::NotFound, "Mode not found"))
     }
-    pub fn get_mode_mut(&mut self, id: &usize) ->  Result<&mut OperativeMode, K2Error> {
-        self.modes.get_mut(id).ok_or(k2err!(K2ErrorCode::NotFound, "Mode not found"))
+    pub fn get_mode_mut(&mut self, name: &String) ->  Result<&mut OperativeMode, K2Error> {
+        self.modes.get_mut(name).ok_or(k2err!(K2ErrorCode::NotFound, "Mode not found"))
     }
-    pub fn set_current_mode(&mut self, id: usize) -> Result<(), K2Error> {
-        if self.modes.contains_key(&id) {
-            let mode = self.modes.get_mut(&self.current_mode_id).ok_or(k2err!(K2ErrorCode::NotFound, "Current mode not found"))?;
+    pub fn set_current_mode(&mut self, name: &String) -> Result<(), K2Error> {
+        if self.modes.contains_key(name) {
+            let mode = self.modes.get_mut(&self.current_mode).ok_or(k2err!(K2ErrorCode::NotFound, "Current mode not found"))?;
             mode.finalize()?;
-            let mode = self.modes.get_mut(&id).ok_or(k2err!(K2ErrorCode::NotFound, "Mode not found"))?;
+            let mode = self.modes.get_mut(name).ok_or(k2err!(K2ErrorCode::NotFound, "Mode not found"))?;
+            self.stream_configuration.set_mode_configuration(mode.name.clone())?;
             mode.initialize()?;
             mode.process()?;
-            self.current_mode_id = id;
+            self.current_mode = name.clone();
             Ok(())
         } else {
             Err(k2err!(K2ErrorCode::NotFound, "Mode not found"))
@@ -338,6 +345,13 @@ mod test {
     use crate::streamer::modes::Chain;
 
     use super::*;
+    pub struct TestConfiguration {}
+
+    impl StreamConfigurationTrait for TestConfiguration {
+        fn set_mode_configuration(&mut self, _mode: String) -> Result<(), K2Error> {
+            Ok(())
+        }
+    }
     #[derive(K2Memory, K2ProcessorBlock)]
     pub struct TestProcessor {
         name: String,
@@ -389,7 +403,7 @@ mod test {
     #[test]
     fn create_stream_controller() {
         let _lock = TEST_MUTEX.lock();
-        let stream_id: Result<isize, K2Error> = StreamController::create("test".to_string());
+        let stream_id: Result<isize, K2Error> = StreamController::create("test".to_string(), Box::new(TestConfiguration{}));
         assert!(stream_id.is_ok());
         assert!(StreamController::new("test".to_string()).is_err());
         let stream_cntr = StreamController::get_stream_by_id(stream_id.clone().unwrap());
@@ -405,7 +419,7 @@ mod test {
     #[test]
     fn mode_cntr() {
         let _lock = TEST_MUTEX.lock();
-        let stream_id: Result<isize, K2Error> = StreamController::create("test".to_string());
+        let stream_id: Result<isize, K2Error> = StreamController::create("test".to_string(), Box::new(TestConfiguration{}));
         assert!(stream_id.is_ok());
         let stream_cntr = StreamController::get_stream_by_id(stream_id.clone().unwrap());
         assert!(stream_cntr.is_ok());
@@ -414,22 +428,22 @@ mod test {
         let stream_cntr = stream_cntr.as_any_mut().downcast_mut::<StreamController>();
         assert!(stream_cntr.is_some());
         let stream_cntr = stream_cntr.unwrap();
-        let mode = OperativeMode::new("modo1".to_string(), 1);
-        assert!(stream_cntr.add_mode(1, mode).is_ok());
-        let mode = OperativeMode::new("modo2".to_string(), 1);
-        assert!(stream_cntr.add_mode(1, mode).is_err());
-        let mode = stream_cntr.get_mode_mut(&1);
+        let mode = OperativeMode::new("modo1".to_string());
+        assert!(stream_cntr.add_mode(mode).is_ok());
+        let mode = OperativeMode::new("modo1".to_string());
+        assert!(stream_cntr.add_mode(mode).is_err());
+        let mode = stream_cntr.get_mode_mut(&"modo1".to_string());
         assert!(mode.is_ok());
         let mode = mode.unwrap();
         assert!(mode.add_chain("name".to_string(), Arc::new(Mutex::new(Chain::new("name".to_string())))).is_ok());
-        let mode = stream_cntr.get_mode(&1);
+        let mode = stream_cntr.get_mode(&"modo1".to_string());
         assert!(mode.is_ok());
         let mode = mode.unwrap();
         assert!(mode.get_chain(&"name".to_string()).is_ok());
-        assert!(stream_cntr.set_current_mode(1).is_ok());
-        let mode = stream_cntr.get_mode(&2);
+        assert!(stream_cntr.set_current_mode(&"modo1".to_string()).is_ok());
+        let mode = stream_cntr.get_mode(&"modo2".to_string());
         assert!(mode.is_err());
-        assert!(stream_cntr.set_current_mode(2).is_err());
+        assert!(stream_cntr.set_current_mode(&"modo2".to_string()).is_err());
     }
     #[test]
     fn processor_cntr() {
@@ -441,11 +455,11 @@ mod test {
         dbg!("Create chain");
         let chain = Arc::new(Mutex::new(Chain::new("test".to_string())));
         dbg!("Create mode");
-        let mut mode = OperativeMode::new("test".to_string(),1);
+        let mut mode = OperativeMode::new("test".to_string());
         dbg!("Append chain to mode");
         assert!(mode.add_chain("test".to_string(), chain.clone()).is_ok());
         dbg!("Create stream controller");
-        let stream_id: Result<isize, K2Error> = StreamController::create("test".to_string());
+        let stream_id: Result<isize, K2Error> = StreamController::create("test".to_string(), Box::new(TestConfiguration{}));
         assert!(stream_id.is_ok());
         dbg!("Get stream controller arc");
         let stream_cntr = StreamController::get_stream_by_id(stream_id.clone().unwrap());
@@ -456,7 +470,7 @@ mod test {
             let mut stream_cntr = stream_cntr_arc.lock().unwrap();
             let stream_cntr = stream_cntr.as_any_mut().downcast_mut::<StreamController>();
             assert!(stream_cntr.is_some());
-            assert!(stream_cntr.unwrap().add_mode(1, mode).is_ok());
+            assert!(stream_cntr.unwrap().add_mode(mode).is_ok());
         }
         {
             dbg!("Add processor to stream controller");
@@ -517,14 +531,14 @@ mod test {
         let mut proc_2 = TestProcessor::new("test_2".to_string()).unwrap();
         proc_2.get_stream_block_mut().get_output_mut(&"output".to_string()).unwrap().connect(output_sender);
         let chain = Arc::new(Mutex::new(Chain::new("test_chain".to_string())));
-        let mut mode = OperativeMode::new("Mode_1".to_string(), 1);
+        let mut mode = OperativeMode::new("Mode_1".to_string());
         assert!(mode.add_chain("test_chain".to_string(), chain.clone()).is_ok());
-        let stream_id = StreamController::create("test_stream".to_string());
+        let stream_id = StreamController::create("test_stream".to_string(), Box::new(TestConfiguration{}));
         let stream_cntr = StreamController::get_stream_by_id(stream_id.clone().unwrap());
         let stream_cntr = stream_cntr.unwrap();
         let mut stream_cntr = stream_cntr.lock().unwrap();
         let stream_cntr = stream_cntr.as_any_mut().downcast_mut::<StreamController>().unwrap();
-        assert!(stream_cntr.add_mode(1, mode).is_ok());
+        assert!(stream_cntr.add_mode(mode).is_ok());
         assert!(stream_cntr.add_processor(&chain.clone(), "test_1".to_string(), proc_1).is_ok());
         assert!(stream_cntr.add_processor(&chain.clone(), "test_2".to_string(), proc_2).is_ok());
         let ret = stream_cntr.connect::<i64>("test_1.output".to_string(), "test_2.input".to_string());
@@ -540,7 +554,7 @@ mod test {
             Ok(_) => {},
             Err(e) => {eprintln!("{}", e.message); assert!(false);}
         }
-        assert!(stream_cntr.set_current_mode(1).is_ok());
+        assert!(stream_cntr.set_current_mode(&"Mode_1".to_string()).is_ok());
         let _handle = std::thread::spawn( move || {
             let _ = StreamController::run(stream_id.unwrap());      
         });
@@ -563,14 +577,14 @@ mod test {
         let _lock = TEST_MUTEX.lock();
         let proc_1 = TestProcessor::new("test_1".to_string()).unwrap();
         let chain = Arc::new(Mutex::new(Chain::new("test_chain".to_string())));
-        let mut mode = OperativeMode::new("Mode_1".to_string(), 1);
+        let mut mode = OperativeMode::new("Mode_1".to_string());
         assert!(mode.add_chain("test_chain".to_string(), chain.clone()).is_ok());
-        let stream_id = StreamController::create("test_stream".to_string());
+        let stream_id = StreamController::create("test_stream".to_string(), Box::new(TestConfiguration{}));
         let stream_cntr = StreamController::get_stream_by_id(stream_id.clone().unwrap());
         let stream_cntr = stream_cntr.unwrap();
         let mut stream_cntr = stream_cntr.lock().unwrap();
         let stream_cntr = stream_cntr.as_any_mut().downcast_mut::<StreamController>().unwrap();
-        assert!(stream_cntr.add_mode(1, mode).is_ok());
+        assert!(stream_cntr.add_mode(mode).is_ok());
         assert!(stream_cntr.add_processor(&chain.clone(), "test_1".to_string(), proc_1).is_ok());
         assert!(stream_cntr.add_command(
             "test.callback".to_string(), 
