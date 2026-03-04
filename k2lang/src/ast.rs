@@ -178,10 +178,7 @@ impl AbstractSyntaxTree {
     pub fn parse_set(&mut self, input: &K2LangStruct) -> K2LangReturn {
         let object_name = input.data[0].name.clone();
         let object = self.object_table.get_mut(&object_name).ok_or(k2err!(K2ErrorCode::NotFound, format!("Object {} not found", object_name)))?;
-        if object.object_type != "parameter".to_string() && object.object_type != "state".to_string() {
-            return Err(k2err!(K2ErrorCode::InvalidOperation, format!("Type {} is not settable", object.object_type)));
-        }
-        object.properties.insert("value".to_string(), input.tokens[2].clone());
+        object.properties.insert(input.tokens[2].clone(), input.tokens[3].clone());
         let mut output = input.clone();
         output.data = vec![object.clone()];
         Ok(output)

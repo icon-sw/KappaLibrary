@@ -181,12 +181,8 @@ impl Parser {
     }
     pub fn parse_set(input: &K2LangStruct) -> K2LangReturn {
         let mut output = input.clone();
-        let token_name = Parser::check_name(&input.tokens[1].clone())?;
-        if input.tokens.len() != 3 {
+        if input.tokens.len() != 4 {
             return Err(k2err!(K2ErrorCode::BadFormat, "Wrong number of parameter for set command".to_string()));
-        }
-        if token_name.len() < 3 {
-            return Err(k2err!(K2ErrorCode::InvalidOperation, "Object can not be settable".to_string()));
         }
          output.data.push(
             K2LangObject { 

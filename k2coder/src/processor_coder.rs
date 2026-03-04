@@ -93,17 +93,14 @@ impl fmt::Display for ProcessorCodePart {
 pub struct ProcessorChild {
     pub name: String,
     pub k2_type: String,
-    pub obj_type: Option<String>,
-    pub value: Option<String>,
-    pub kind: Option<String>,
-    pub callback: Option<String>,
-    
+    pub properties: HashMap<String, String>,
 }
 pub struct ProcessorCoder {
     name: String,
     file_path: String,
     object_map: HashMap<String, ProcessorChild>,
-    code_map: HashMap<ProcessorCodePart, String>
+    code_map: HashMap<ProcessorCodePart, String>,
+    properties: HashMap<String, String>,
 }
 
 impl ProcessorCoder {
@@ -114,6 +111,7 @@ impl ProcessorCoder {
             file_path: format!("{}/src/{}.rs", library_path, file_name),
             object_map: HashMap::new(),
             code_map: HashMap::new(),
+            properties: HashMap::new(),
         };
         for code in 0..12 {
             let code = ProcessorCodePart::try_from(code)?;
@@ -130,39 +128,38 @@ impl ProcessorCoder {
                     join_lines.push(format!("{}.add_{}::<{}>(\"{}\");",
                         line_head, 
                         child.k2_type, 
-                        child.obj_type.clone().unwrap(), 
+                        child.properties.get("type").ok_or(k2err!(K2ErrorCode::NotFound, format!("Type is mandatory for {}", child.k2_type)))?, 
                         child.name));
                 }
                 "state" => {
                     join_lines.push(format!("{}.add_{}::<{}>(\"{}\");",
                         line_head, 
                         child.k2_type, 
-                        child.obj_type.clone().unwrap(), 
+                        child.properties.get("type").ok_or(k2err!(K2ErrorCode::NotFound, format!("Type is mandatory for {}", child.k2_type)))?, 
                         child.name));
                     join_lines.push(format!("{}.set_state_value::<T>(\"{}\",{})",
                         line_head,
-                        child.obj_type.clone().unwrap(),
+                        child.properties.get("value").ok_or(k2err!(K2ErrorCode::NotFound, format!("Value is mandatory for {}", child.k2_type)))?, 
                         child.name));
                 }
                 "parameter" => {
                     join_lines.push(format!("{}.add_{}::<{}>(\"{}, ParameterType::{}\");",
                         line_head, 
                         child.k2_type,
-                        child.obj_type.clone().unwrap(), 
+                        child.properties.get("type").ok_or(k2err!(K2ErrorCode::NotFound, format!("Type is mandatory for {}", child.k2_type)))?, 
                         child.name, 
-                        child.kind.clone().unwrap()));
+                        child.properties.get("kind").ok_or(k2err!(K2ErrorCode::NotFound, format!("Static/Dynamic properties is mandatory for {}", child.k2_type)))?));
                     join_lines.push(format!("{}.set_param_value::<T>(\"{}\",{})",
                         line_head,
-                        child.obj_type.clone().unwrap(),
+                        child.properties.get("value").ok_or(k2err!(K2ErrorCode::NotFound, format!("Value is mandatory for {}", child.k2_type)))?, 
                         child.name));
                 }
                 "command" => {
-                     join_lines.push(format!("{}.add_{}::<{}>(\"{}, ParameterType::{}\");",
+                     join_lines.push(format!("{}.add_{}(\"{}, ParameterType::{}\");",
                         line_head, 
                         child.k2_type,
-                        child.obj_type.clone().unwrap(), 
                         child.name,
-                        child.callback.clone().unwrap()));
+                        child.properties.get("callback").ok_or(k2err!(K2ErrorCode::NotFound, format!("Static/Dynamic properties is mandatory for {}", child.k2_type)))?));
                 }
                 _ => {
                 }
@@ -175,7 +172,6 @@ impl ProcessorCoder {
         let template_name = format!("templates/{}.template", code);
         let result = std::fs::read(template_name).map_err(|err| k2err!(K2ErrorCode::GenericError, format!("{}", err)))?;
         let result = String::from_utf8(result).map_err(|err| k2err!(K2ErrorCode::GenericError, format!("{}", err)))?;
-        let result = result.replace("K2Template", &self.name);
         Ok(result)
     }
 }
@@ -192,26 +188,23 @@ impl CoderTrait for ProcessorCoder {
                 let mut new_object = ProcessorChild {
                     name: input.data[0].name.clone(),
                     k2_type: input.data[0].object_type.clone(),
-                    obj_type: None,
-                    value: None,
-                    kind: None,
-                    callback: None,
+                    properties: HashMap::new(),
                 };
                 match new_object.k2_type.as_str() {
                     "input" | "output" => {
-                        new_object.obj_type = Some(input.data[0].properties.get("type").ok_or(k2err!(K2ErrorCode::NotFound, "Type field not found"))?.clone());
+                        new_object.properties.insert("type".to_string(), input.data[0].properties.get("type").ok_or(k2err!(K2ErrorCode::NotFound, "Type field not found"))?.clone());
                     }
                     "state" => {
-                        new_object.obj_type = Some(input.data[0].properties.get("type").ok_or(k2err!(K2ErrorCode::NotFound, "Type field not found"))?.clone());
-                        new_object.value = Some(input.data[0].properties.get("value").ok_or(k2err!(K2ErrorCode::NotFound, "Value field not found"))?.clone());
+                        new_object.properties.insert("type".to_string(), input.data[0].properties.get("type").ok_or(k2err!(K2ErrorCode::NotFound, "Type field not found"))?.clone());
+                        new_object.properties.insert("value".to_string(), input.data[0].properties.get("value").ok_or(k2err!(K2ErrorCode::NotFound, "Type field not found"))?.clone());
                     }
                     "parameter" => {
-                        new_object.obj_type = Some(input.data[0].properties.get("type").ok_or(k2err!(K2ErrorCode::NotFound, "Type field not found"))?.clone());
-                        new_object.value = Some(input.data[0].properties.get("value").ok_or(k2err!(K2ErrorCode::NotFound, "Value field not found"))?.clone());
-                        new_object.kind = Some(input.data[0].properties.get("kind").ok_or(k2err!(K2ErrorCode::NotFound, "Parameter type field not found"))?.clone());
+                        new_object.properties.insert("type".to_string(), input.data[0].properties.get("type").ok_or(k2err!(K2ErrorCode::NotFound, "Type field not found"))?.clone());
+                        new_object.properties.insert("value".to_string(), input.data[0].properties.get("value").ok_or(k2err!(K2ErrorCode::NotFound, "Type field not found"))?.clone());
+                        new_object.properties.insert("kind".to_string(), input.data[0].properties.get("kind").ok_or(k2err!(K2ErrorCode::NotFound, "Type field not found"))?.clone());
                     }
                     "command" => {
-                        new_object.callback = Some(input.data[0].properties.get("callback").ok_or(k2err!(K2ErrorCode::NotFound, "Callback field not found"))?.clone());
+                        new_object.properties.insert("callback".to_string(), input.data[0].properties.get("callback").ok_or(k2err!(K2ErrorCode::NotFound, "Type field not found"))?.clone());
                     }
                     _ => {return Err(k2err!(K2ErrorCode::BadFormat, format!("Type {} not exists", new_object.k2_type)));}
                 }
@@ -221,9 +214,13 @@ impl CoderTrait for ProcessorCoder {
                 self.object_map.remove(&input.data[0].name);
             }
             "set" => {
-                let child = self.object_map.get_mut(&input.data[0].name)
-                    .ok_or(k2err!(K2ErrorCode::NotFound, format!("Object {} does not exist", input.data[0].name)))?;
-                child.value = Some(input.data[0].properties.get("value").ok_or(k2err!(K2ErrorCode::NotFound, "Value field not found"))?.clone());
+                if input.data[0].name == self.name {
+                    self.properties.insert(input.tokens[2].clone(), input.tokens[3].clone());
+                } else {
+                    let child = self.object_map.get_mut(&input.data[0].name)
+                        .ok_or(k2err!(K2ErrorCode::NotFound, format!("Object {} does not exist", input.data[0].name)))?;
+                    child.properties.insert(input.tokens[2].clone(), input.tokens[3].clone());
+                }
             }
             "code" => {
                 let code_part = ProcessorCodePart::try_from(input.tokens[2].clone())?;
@@ -244,7 +241,17 @@ impl CoderTrait for ProcessorCoder {
         let mut join_lines: Vec<String> = Vec::new();
         for code in 0..12 {
             let code = ProcessorCodePart::try_from(code)?;
-            let lines = self.code_map.get(&code).ok_or(k2err!(K2ErrorCode::ProcessError, format!("Missing {} code part", code)))?;
+            let mut lines = self.code_map.get(&code).ok_or(k2err!(K2ErrorCode::ProcessError, format!("Missing {} code part", code)))?.clone();
+            if code == ProcessorCodePart::K2InitCode {
+                let new_lines = lines.replace("@processor", &self.name);
+                let new_lines = new_lines.replace("@description", self.properties.get(&"description".to_string()).unwrap_or(&"".to_string()));
+                let new_lines = new_lines.replace("@version", self.properties.get(&"version".to_string()).unwrap_or(&"".to_string()));
+                let new_lines = new_lines.replace("@author", self.properties.get(&"author".to_string()).unwrap_or(&"".to_string()));
+                let new_lines = new_lines.replace("@email", self.properties.get(&"email".to_string()).unwrap_or(&"".to_string()));
+                let new_lines = new_lines.replace("@licence", self.properties.get(&"licence".to_string()).unwrap_or(&"LGPLv2.0".to_string()));
+                let new_lines = new_lines.replace("@repository", self.properties.get(&"repository".to_string()).unwrap_or(&"".to_string()));
+                lines = new_lines.clone();
+            }
             join_lines.push(lines.clone());
             if code == ProcessorCodePart::UserStruct {
                 join_lines.push("}".to_string());
