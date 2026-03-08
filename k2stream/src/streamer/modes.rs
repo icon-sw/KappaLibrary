@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::{Arc, Mutex, OnceLock}, thread::JoinHandle};
 
-use crate::{processor::connections::ConnectionGraph, errors::{K2Error, K2ErrorCode}, k2err, processor::processors::{StreamBlock, StreamType}, streamer::stream_controller::StreamController};
+use crate::{errors::{K2Error, K2ErrorCode}, k2err, processor::{connections::ConnectionGraph, processors::{StreamBlock, StreamType}}, streamer::{stream_controller::StreamController, task_monitor::TaskMonitor}};
 
 static TASK_ID_COUNTER: OnceLock<Mutex<isize>> = OnceLock::new();
 
@@ -141,12 +141,11 @@ impl Chain {
     }
 }
 
-
+#[derive(Clone)]
 pub struct OperativeMode {
     pub name: String,
     stream_id: isize,
     chains: HashMap<String, Arc<Mutex<Chain>>>,
-    chain_results: HashMap<String, JoinHandle<Result<(), K2Error>>>,
 }
 
 impl OperativeMode {
@@ -154,7 +153,6 @@ impl OperativeMode {
         Self {
             name,
             chains: HashMap::new(),
-            chain_results: HashMap::new(),
             stream_id: -1,
         }
     }
@@ -209,32 +207,23 @@ impl OperativeMode {
             return Err(k2err!( K2ErrorCode::Uninitialized, "Stream ID is not set"));
         }
         Chain::set_running(true)?;
-        for chain in self.chains.values_mut() {
+        for (name_chain, chain) in self.chains.iter_mut() {
             // Todo: Gestione dei task
             let chain_clone = chain.clone();
-            let handle: JoinHandle<Result<(), K2Error>> = std::thread::spawn( move || {
+            let _: JoinHandle<Result<(), K2Error>> = TaskMonitor::create_task( name_chain, move || {
                 let mut chain = chain_clone.lock().map_err(|_| k2err!( K2ErrorCode::LockError, "Failed to lock chain"))?;
                 chain.process() 
-            });
-            let chain = chain.lock().map_err(|_| k2err!( K2ErrorCode::LockError, "Failed to lock chain"))?;
-            self.chain_results.insert(chain.name.clone(), handle);
+            })?;
         }
         Ok(())
     }
     pub fn finalize(&mut self) -> Result<(), K2Error> {
         let mut result = Ok(());
         Chain::set_running(false)?;
-        for (chain_name, chain) in self.chains.iter() {
+        for (_ , chain) in self.chains.iter() {
             let mut chain = chain.lock().map_err(|_| k2err!( K2ErrorCode::LockError, "Failed to lock chain"))?;
             if chain.finalize().is_err() {
                 result = Err(k2err!( K2ErrorCode::ProcessError, "Failed to finalize chain"));
-            }
-            if let Some(handle) = self.chain_results.remove(chain_name) {
-                if handle.join().map_err(|_| k2err!( K2ErrorCode::ProcessError, "Failed to join chain thread"))?.is_err() {
-                    result = Err(k2err!( K2ErrorCode::ProcessError, "Failed to finalize chain thread"));
-                }
-            } else {
-                result = Err(k2err!( K2ErrorCode::NotFound, "Chain handle not found"));
             }
         }
         result

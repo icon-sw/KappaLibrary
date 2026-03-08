@@ -3,6 +3,11 @@ name = "k2stream"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+log_verbose = []
+telemetry = []
+
+default = ["telemetry"]
 [dependencies]
 num-traits = "0.2.19"
 rand = "0.9.2"
@@ -12,3 +17,5 @@ libloading = "0.9.0"
 processor_macro = { path = "../macro/processor_macro"}
 memory_macro = { path = "../macro/memory_macro"}
 libc = "0.2.182"
+chrono = "0.4.44"
+regex = "1.12.3"

@@ -1,11 +1,12 @@
 use std::any::Any;
 use std::{collections::HashMap, sync::MutexGuard};
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
 use crate::processor::connections::{Input, Output};
 use crate::errors::{K2Error, K2ErrorCode};
 use crate::k2err;
-use crate::processor::memory::{DataHeader, Memory, MemoryTrait};
+use crate::processor::memory::{DataHeader, K2Data, Memory, MemoryTrait};
 use crate::processor::parameters::{Parameter, ParameterType};
 use crate::processor::states::State;
 use crate::streamer::stream_controller::{Callback, StreamController};
@@ -175,11 +176,11 @@ impl StreamBlock
     where T: 'static + Clone + Sync + Send + Default {
         self.get_state_mut(name)?.set(value)
     }
-    pub fn get_param_value<T>(&mut self, name: &String) -> Result<&T, K2Error> 
+    pub fn get_param_value<T>(&self, name: &String) -> Result<&T, K2Error> 
     where T: 'static + Clone + Sync + Send + PartialOrd + Default {
         Ok(self.get_parameter(name)?.get())
     }
-    pub fn get_state_value<T>(&mut self, name: &String) -> Result<&T, K2Error> 
+    pub fn get_state_value<T>(&self, name: &String) -> Result<&T, K2Error> 
     where T: 'static + Clone + Sync + Send + PartialOrd + Default {
         Ok(self.get_state(name)?.get())
     }
@@ -196,11 +197,20 @@ impl StreamBlock
     pub fn receive_input<T>(&self, name: &String) -> Result<T, K2Error> 
     where T: 'static + Send + Sync
     {
-        self.get_input(name)?.receive()
+        match self.get_input(name)?.receive() {
+            Ok(data) => {
+                Ok(data.data)
+            }
+            Err(err) => Err(err)
+        }
     }
     pub fn send_output<T>(&self, name: &String, data: T) -> Result<(), K2Error> 
         where T: 'static + Send + Sync + Clone 
     {
+        let data = K2Data {
+            id: rand::rng().next_u64(),
+            data, 
+        };
         self.get_output(name)?.send(data)
     }
     pub fn get_processor_type(&self) -> StreamType {

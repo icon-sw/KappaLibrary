@@ -1,13 +1,13 @@
-use std::{collections::{VecDeque, vec_deque::Iter}, sync::{Arc, Mutex, mpsc::{Receiver, SyncSender}}};
+use std::{collections::{VecDeque, vec_deque::Iter}, fmt, sync::{Arc, Mutex, mpsc::{Receiver, SyncSender}}};
 use memory_macro::K2Memory;
 
-use crate::{errors::{K2Error, K2ErrorCode}, k2err, processor::memory::{DataHeader, MemoryTrait}};
+use crate::{errors::{K2Error, K2ErrorCode}, k2err, k2log, k2log_verbose, log::K2LogLevel, processor::memory::{DataHeader, K2Data, MemoryTrait}};
 
 #[derive(K2Memory)]
 pub struct Input<T: 'static + Send + Sync> {
     pub name: DataHeader,
-    receiver: Arc<Mutex<Receiver<T>>>,
-    sender: SyncSender<T>,
+    receiver: Arc<Mutex<Receiver<K2Data<T>>>>,
+    sender: SyncSender<K2Data<T>>,
 }
 
 impl<T: 'static + Send + Sync> Input<T> {
@@ -18,32 +18,42 @@ impl<T: 'static + Send + Sync> Input<T> {
     pub fn get_header(&self) -> &DataHeader {
         &self.name
     }
-    pub fn get_sender(&self) -> SyncSender<T> {
+    pub fn get_sender(&self) -> SyncSender<K2Data<T>> {
         self.sender.clone()
     }
-    pub fn receive(&self) -> Result<T, K2Error> {
-        self.receiver
+    pub fn receive(&self) -> Result<K2Data<T>, K2Error> {
+        let data = self.receiver
             .lock().map_err(|_| k2err!( K2ErrorCode::LockError, "Failed to lock receiver"))?
-            .recv().map_err(|_| k2err!( K2ErrorCode::NotFound, "Failed to receive data"))
+            .recv().map_err(|_| k2err!( K2ErrorCode::NotFound, "Failed to receive data"));
+        match data {
+            Ok(ref data) => {
+                k2log_verbose!(self.name.clone(), "{}", format!("{}",data.id));
+            }
+            Err(_) => {
+
+            }
+        }
+        data
     }
 }
 #[derive(K2Memory)]
 pub struct Output<T: 'static + Send + Sync> {
     pub name: DataHeader,
-    sender: Vec<SyncSender<T>>,
+    sender: Vec<SyncSender<K2Data<T>>>,
 }
 
 impl<T: 'static + Send + Sync + Clone> Output<T> {
     pub fn new(name: DataHeader) -> Self {
         Self { name, sender: Vec::new() }
     }
-    pub fn connect(&mut self, sender: SyncSender<T>) {
+    pub fn connect(&mut self, sender: SyncSender<K2Data<T>>) {
         self.sender.push(sender);
     }
     pub fn get_header(&self) -> &DataHeader {
         &self.name
     }
-    pub fn send(&self, data: T) -> Result<(), K2Error> {
+    pub fn send(&self, data: K2Data<T>) -> Result<(), K2Error> {
+        k2log_verbose!(self.name.clone(), "{}", format!("{}",data.id));
         for sender in &self.sender {
             sender.send(data.clone()).map_err(|_| k2err!( K2ErrorCode::NotFound, "Failed to send data"))?;
         }

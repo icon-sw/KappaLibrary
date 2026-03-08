@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard, OnceLock}, thread
 use processor_macro::K2ProcessorBlock;
 use memory_macro::K2Memory;
 
-use crate::{errors::{K2Error, K2ErrorCode}, k2err, processor::memory::{DataHeader, MemoryTrait}, streamer::modes::{ChainType, OperativeMode}, processor::processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}};
+use crate::{errors::{K2Error, K2ErrorCode}, k2err, processor::{memory::{DataHeader, MemoryTrait}, processors::{ProcessorBlockTrait, ProcessorHeader, ProcessorNewReturn, ProcessorTrait, StreamBlock, StreamState}}, streamer::{modes::{ChainType, OperativeMode}, task_monitor::TaskMonitor}};
 
 pub type Callback = fn (&mut dyn ProcessorTrait) -> Result<(), K2Error>;
 pub type StreamProcessorHandle = Arc<Mutex<Option<JoinHandle<Result<(),K2Error>>>>>;
@@ -27,7 +27,7 @@ pub struct StreamController {
     stream_id: isize,
     stream_block: StreamBlock,
     stream_configuration: Box<dyn StreamConfigurationTrait>,
-    modes: HashMap<String, OperativeMode>,
+    modes: HashMap<String, Arc<Mutex<OperativeMode>>>,
     current_mode: String,
     command_map: HashMap<String, String>,
     commands_callback: HashMap<String, Callback>,
@@ -124,7 +124,7 @@ impl StreamController {
     }
     pub fn run(stream_id: isize) -> Result<(), K2Error> {
         let stream = Self::get_stream_by_id(stream_id)?.clone();
-        let handle: JoinHandle<Result<(), K2Error>> = std::thread::spawn(move || {
+        let handle: JoinHandle<Result<(), K2Error>> = TaskMonitor::create_task(format!("stream_{}",stream_id),move || {
             let mut stream = stream.lock().map_err(|_| k2err!(K2ErrorCode::LockError, ""))?;
             let stream = stream.as_any_mut().downcast_mut::<Self>().ok_or(k2err!(K2ErrorCode::BadFormat, ""))?;
             {
@@ -146,14 +146,16 @@ impl StreamController {
                 }
             }
             Ok(())
-        });
+        })?;
         
         let stream = Self::get_stream_by_id(stream_id)?.clone();
         let mut stream = stream.lock().map_err(|_| k2err!(K2ErrorCode::LockError, "Failed to lock stream"))?;
         let stream = stream.as_any_mut().downcast_mut::<Self>().ok_or(k2err!(K2ErrorCode::LockError, ""))?;
         stream.set_stream_handle(Arc::new(Mutex::new(Some(handle))));
         for modes in stream.modes.values_mut() {
-            modes.process()?;
+            let mut mode = modes.lock().map_err(|err|
+                k2err!(K2ErrorCode::LockError, format!("{}", err)))?;
+            mode.process()?;
         }
         Ok(())
     }
@@ -163,23 +165,25 @@ impl StreamController {
             Err(k2err!(K2ErrorCode::AlreadyExists, "Mode with this ID already exists"))
         } else {
             mode.set_stream_id(self.get_stream_id())?;
-            self.modes.insert(mode_name.clone(), mode);
-            let mode = self.modes.get(&mode_name).unwrap();
-            dbg!(mode.get_stream_id());
+            self.modes.insert(mode_name.clone(), Arc::new(Mutex::new(mode)));
             Ok(())
         }
     }
-    pub fn get_mode(&self, name: &String) ->  Result<&OperativeMode, K2Error> {
-        self.modes.get(name).ok_or(k2err!(K2ErrorCode::NotFound, "Mode not found"))
+    pub fn get_mode(&self, name: &String) ->  Result<Arc<Mutex<OperativeMode>>, K2Error> {
+        let op_mode = self.modes.get(name).ok_or(k2err!(K2ErrorCode::NotFound, "Mode not found"))?;
+        Ok(op_mode.clone())
     }
-    pub fn get_mode_mut(&mut self, name: &String) ->  Result<&mut OperativeMode, K2Error> {
-        self.modes.get_mut(name).ok_or(k2err!(K2ErrorCode::NotFound, "Mode not found"))
+    pub fn get_mode_mut(&mut self, name: &String) ->  Result<Arc<Mutex<OperativeMode>>, K2Error> {
+        let op_mode = self.modes.get_mut(name).ok_or(k2err!(K2ErrorCode::NotFound, "Mode not found"))?;
+        Ok(op_mode.clone())
     }
     pub fn set_current_mode(&mut self, name: &String) -> Result<(), K2Error> {
         if self.modes.contains_key(name) {
-            let mode = self.modes.get_mut(&self.current_mode).ok_or(k2err!(K2ErrorCode::NotFound, "Current mode not found"))?;
+            let mode = self.modes.get(&self.current_mode).ok_or(k2err!(K2ErrorCode::NotFound, "Current mode not found"))?;
+            let mut mode = mode.lock().map_err(|err| k2err!(K2ErrorCode::LockError, format!("{}", err)))?;
             mode.finalize()?;
-            let mode = self.modes.get_mut(name).ok_or(k2err!(K2ErrorCode::NotFound, "Mode not found"))?;
+            let mode = self.modes.get(name).ok_or(k2err!(K2ErrorCode::NotFound, "Mode not found"))?;
+            let mut mode = mode.lock().map_err(|err| k2err!(K2ErrorCode::LockError, format!("{}", err)))?;
             self.stream_configuration.set_mode_configuration(mode.name.clone())?;
             mode.initialize()?;
             mode.process()?;
@@ -299,9 +303,10 @@ impl ProcessorTrait for StreamController {
             };
         }
         dbg!("Initializing modes...");
-        for mode in self.modes.values_mut() {
-            dbg!(mode.get_stream_id());
-            mode.initialize()?;
+        for mode in self.modes.values() {
+            mode.lock().map_err(|err| 
+                k2err!(K2ErrorCode::LockError, format!("{}", err)))?
+                .initialize()?;
         }
         dbg!("End initilize...");
         *state = StreamState::Initialized;
@@ -309,9 +314,9 @@ impl ProcessorTrait for StreamController {
     }
     fn process(&mut self) -> Result<(), K2Error> {
         if self.stream_block.get_input::<String>(&"command".to_string())?.receive().is_ok() {
-            let command = self.stream_block.get_input::<String>(&"command".to_string())?.receive()?;
+            let command = self.stream_block.receive_input::<String>(&"command".to_string())?;
             self.execute_command(command)?;
-            if self.stream_block.get_output::<Result<(),K2Error>>(&"response".to_string())?.send(Ok(())).is_ok() {
+            if self.stream_block.send_output::<Result<(),K2Error>>(&"response".to_string(),Ok(())).is_ok() {
                 return Ok(());
             }
         }
@@ -332,7 +337,9 @@ impl ProcessorTrait for StreamController {
         std::thread::sleep(Duration::from_millis(100));
         dbg!("Finalizing mode");
         for mode in self.modes.values_mut() {
-            mode.finalize()?;
+            mode.lock().map_err(|err| 
+                k2err!(K2ErrorCode::LockError, format!("{}", err)))?
+            .finalize()?;
         }
         Ok(())
     }
@@ -435,8 +442,14 @@ mod test {
         let mode = stream_cntr.get_mode_mut(&"modo1".to_string());
         assert!(mode.is_ok());
         let mode = mode.unwrap();
+        let mode = mode.lock().map_err(|err| k2err!(K2ErrorCode::LockError, format!("{}", err)));
+        assert!(mode.is_ok());
+        let mut mode = mode.unwrap();
         assert!(mode.add_chain("name".to_string(), Arc::new(Mutex::new(Chain::new("name".to_string())))).is_ok());
         let mode = stream_cntr.get_mode(&"modo1".to_string());
+        assert!(mode.is_ok());
+        let mode = mode.unwrap();
+        let mode = mode.lock().map_err(|err| k2err!(K2ErrorCode::LockError, format!("{}", err)));
         assert!(mode.is_ok());
         let mode = mode.unwrap();
         assert!(mode.get_chain(&"name".to_string()).is_ok());

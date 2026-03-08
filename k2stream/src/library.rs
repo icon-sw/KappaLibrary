@@ -3,7 +3,7 @@ use std::{collections::HashMap, ffi::{CStr, c_char, c_void}, ptr};
 use libloading::{Library, Symbol};
 use serde::{Deserialize, Serialize};
 
-use crate::{errors::{K2Error, K2ErrorCode}, processor::processors::ProcessorTrait};
+use crate::{errors::{K2Error, K2ErrorCode}, k2err, processor::processors::ProcessorTrait};
 
 pub type ProcessorNew = fn(name: String) -> Result<Box<dyn ProcessorTrait>, K2Error>;
 

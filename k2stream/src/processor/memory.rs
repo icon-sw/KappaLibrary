@@ -1,9 +1,16 @@
 use std::{any::Any, collections::HashMap};
 
+use chrono::{DateTime, Utc};
+
 use crate::errors::{K2Error, K2ErrorCode};
 
 pub type DataHeader = String;
 
+#[derive(Clone)]
+pub struct K2Data<T> {
+    pub id: u64,
+    pub data: T,
+}
 pub trait MemoryTrait : Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;

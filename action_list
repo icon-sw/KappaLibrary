@@ -20,3 +20,9 @@ Creazione Library:
     - memory_macro = { path = "../macro/memory_macro"}
 
 Sostituire tutti i K2Error{} con k2err! in k2stream
+
+2026/03/04
+1 - Finire ApplicationCoder
+2 - Cambiare la set -> set object "key" value FATTO
+3 - Finire il main 
+4 - Cambiare la set per modalità FATTO

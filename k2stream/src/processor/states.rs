@@ -1,6 +1,6 @@
 use memory_macro::K2Memory;
 
-use crate::{errors::{K2Error, K2ErrorCode}, k2err, processor::memory::{DataHeader, DataTrait, MemoryTrait}};
+use crate::{errors::{K2Error, K2ErrorCode}, k2err, k2log_verbose, k2log, log::K2LogLevel, processor::memory::{DataHeader, DataTrait, MemoryTrait}};
 
 #[derive(Clone, K2Memory)]
 pub struct State<T: 'static + Sync + Send> {
@@ -23,6 +23,7 @@ impl<T: 'static + Clone + Sync + Send + Default> State<T> {
     pub fn set(&mut self, value: T) -> Result<(), K2Error> {
         if self.initialized {
             self.value = value;
+            k2log_verbose!(self.name.clone(), "Set state value");
             Ok(())
         }
         else {

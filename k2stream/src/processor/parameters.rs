@@ -1,9 +1,9 @@
-use std::fmt;
+use std::{fmt, sync::{Arc, mpsc::{Receiver, SyncSender, sync_channel}}};
 
 use memory_macro::K2Memory;
 use num_traits::{Float, PrimInt};
 
-use crate::{errors::{K2Error, K2ErrorCode}, k2err, processor::memory::{DataHeader, DataTrait, MemoryTrait}};
+use crate::{errors::{K2Error, K2ErrorCode}, k2log_verbose, k2err, k2log, processor::memory::{DataHeader, DataTrait, MemoryTrait}};
 
 pub enum ParameterRangeType {
     Range,
@@ -35,10 +35,13 @@ pub struct Parameter<T: 'static + Send + Sync> {
     values: Vec<T>,
     param_type: ParameterType,
     setted: bool,
+    telemetry_sender: SyncSender<T>,
+    telemetry_receiver: Arc<Receiver<T>>,
 }
 
 impl<T: 'static + PrimInt + Sync + Send> Parameter<T> {
     pub fn int(name: DataHeader, default: T, param_type: ParameterType) -> Result<Self, K2Error> {
+        let (sender, receiver) = sync_channel::<T>(10);
         let param = Self {
             name: name.clone(),
             value: default,
@@ -49,6 +52,8 @@ impl<T: 'static + PrimInt + Sync + Send> Parameter<T> {
             values: Vec::new(),
             param_type,
             setted: false,
+            telemetry_sender: sender,
+            telemetry_receiver: Arc::new(receiver),
         };
         Ok(param)
     }
@@ -56,6 +61,7 @@ impl<T: 'static + PrimInt + Sync + Send> Parameter<T> {
 
 impl<T: 'static + Float + Sync + Send> Parameter<T> {
     pub fn float(name: DataHeader, default: T, param_type: ParameterType) -> Result<Self, K2Error> {
+        let (sender, receiver) = sync_channel::<T>(10);
         let param = Self {
             name: name.clone(),
             value: default,
@@ -66,6 +72,8 @@ impl<T: 'static + Float + Sync + Send> Parameter<T> {
             values: Vec::new(),
             param_type,
             setted: false,
+            telemetry_sender: sender,
+            telemetry_receiver: Arc::new(receiver),
         };
         Ok(param)
     }
@@ -74,6 +82,7 @@ impl<T: 'static + Float + Sync + Send> Parameter<T> {
 impl<T: 'static + Clone + PartialOrd + Send + Sync> Parameter<T> 
 {
     pub fn new(name: DataHeader, default: T, param_type: ParameterType) -> Result<Self, K2Error> {
+        let (sender, receiver) = sync_channel::<T>(10);
         let param = Self {
             name: name.clone(),
             value: default.clone(),
@@ -84,6 +93,8 @@ impl<T: 'static + Clone + PartialOrd + Send + Sync> Parameter<T>
             values: Vec::new(),
             param_type,
             setted: false,
+            telemetry_sender: sender,
+            telemetry_receiver: Arc::new(receiver),
         };
         Ok(param)
     }
@@ -141,8 +152,10 @@ impl<T: 'static + Clone + PartialOrd + Send + Sync> Parameter<T>
             && &value > max_value {
                 return Err(k2err!( K2ErrorCode::OutOfRange, "Value is out of range"))
             }
-        self.value = value;
+        self.value = value.clone();
         self.setted = true;
+        let _ = k2log_verbose!(self.name.clone(), "{}", "Set parameter value");
+        let _ = self.telemetry_sender.send(value);
         Ok(())
     }
     pub fn get(&self) -> &T {
@@ -154,6 +167,9 @@ impl<T: 'static + Clone + PartialOrd + Send + Sync> Parameter<T>
     }
     pub fn is_default(&self) -> bool {
         self.value == self.default
+    }
+    pub fn get_telemetry_receiver(&self) -> Arc<Receiver<T>> {
+        self.telemetry_receiver.clone()
     }
 }
 
